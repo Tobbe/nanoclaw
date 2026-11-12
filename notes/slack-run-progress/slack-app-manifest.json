@@ -1,0 +1,52 @@
+{
+  "display_information": {
+    "name": "CodeBot",
+    "description": "Coding agent (NanoClaw, plain bot, Socket Mode, no agent view)"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "CodeBot",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "chat:write",
+        "im:write",
+        "channels:history",
+        "groups:history",
+        "im:history",
+        "channels:read",
+        "groups:read",
+        "mpim:read",
+        "users:read",
+        "reactions:write",
+        "files:read",
+        "files:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "app_mention"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

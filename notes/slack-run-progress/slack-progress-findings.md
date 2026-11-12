@@ -84,3 +84,17 @@ The source is authoritative. Several docs are out of date (noted at the bottom).
 - `docs/agent-runner-details.md`: the event union, the compact_boundary/rate_limit mapping, and "result writes messages_out".
 - `docs/architecture.md`: claims "streaming via post+edit" for Discord/Telegram, which doesn't exist.
   The typing-clear behaviour is also described wrongly.
+
+## Live Slack setup notes (2026-11-12)
+
+- **Renaming the bot:** changing App Home → Display Name (and reinstalling)
+  does not rename an existing bot's user account; `users.info` keeps the old
+  name. What works: the workspace's app settings page,
+  `https://<workspace>.slack.com/marketplace/<APP_ID>?settings=1&tab=settings`
+  → Bot User → Edit. It applies instantly.
+- **Typing indicator:** the Slack adapter's typing call needs a thread.
+  Top-level DM / channel messages get none. The run-progress module's
+  👀 → ✅ receipt reaction covers that.
+- **Setup wizard:** it always routes Slack through the NanoClaw account portal.
+  For an app you created yourself, skip Slack in the wizard and run
+  `notes/slack-run-progress/setup-slack-manual.ts`.
