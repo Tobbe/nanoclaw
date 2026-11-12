@@ -255,8 +255,14 @@ CONTRIBUTING only accepts fixes, simplifications and small seams into core. Feat
   At startup, open cards are restored and closed as Interrupted if their container doesn't come back. Finished rows are pruned after 7 days.
 - The runner now also puts the route in the payload, because system-action handlers don't see the row's columns.
   The host honors it only when it names the session's own chat.
-- Known edge: if a host restart happens after a run's final snapshot was delivered but before the card's final edit,
-  the card stays "Working" until the container exits. It then becomes "Interrupted".
+- Restart safety (fixed 2026-11-12):
+  - The `run_progress` handler records each newer snapshot of a posted card in its row *before* delivery marks
+    the outbound row delivered. A final state the card hasn't shown yet therefore survives a restart, and the new
+    host shows Done or Failed right away.
+  - Rows have `seq`: snapshot fields only move forward. They also have `closed`, which only goes 0 → 1, so the
+    handler and the manager can't undo each other.
+  - Remaining tiny gap, accepted: if the host crashes in the milliseconds between Slack accepting a new card and
+    the host saving its id, that card is orphaned. Finding it would mean scanning thread history at every start.
 
 Container side (`container/agent-runner/src/`):
 - `progress/types.ts`: the progress model.

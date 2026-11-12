@@ -236,7 +236,9 @@ describe('RunCardManager', () => {
       instance: 'slack',
       platform_message_id: 'ts-old',
       status: 'running',
+      seq: 4,
       snapshot_json: '{}',
+      closed: 0,
       created_at: new Date(T0).toISOString(),
       updated_at: new Date(T0).toISOString(),
     };
@@ -252,6 +254,44 @@ describe('RunCardManager', () => {
     await alive.run(3000);
     expect(alive.calls).toEqual([expect.objectContaining({ op: 'edit', messageId: 'ts-old' })]);
     expect(alive.calls[0].title).toContain('Working on it');
+  });
+
+  it('finishes a restored card whose run ended while the host was down', async () => {
+    // The old host accepted the final snapshot (recorded in the row) but
+    // restarted before editing the card. The new host must show Done, not
+    // wait for the container and guess Interrupted.
+    const row: RunCardRow = {
+      session_id: 'sess',
+      run_id: 'run-1',
+      channel_type: 'slack',
+      platform_id: 'slack:C1',
+      thread_id: 'slack:C1:1.0',
+      instance: 'slack',
+      platform_message_id: 'ts-old',
+      status: 'done',
+      seq: 7,
+      snapshot_json: '{}',
+      closed: 0,
+      created_at: new Date(T0).toISOString(),
+      updated_at: new Date(T0).toISOString(),
+    };
+    const h = harness({ running: false });
+    h.manager.restore(row, snap(7, { status: 'done', updatedAt: new Date(T0 + 42_000).toISOString() }));
+    await h.run(1000);
+    expect(h.calls).toEqual([expect.objectContaining({ op: 'edit', messageId: 'ts-old', title: '✅ Done · 42s' })]);
+    expect(h.saved.at(-1)).toMatchObject({ status: 'done', seq: 7, closed: 1 });
+    await h.run(40_000);
+    expect(h.calls).toHaveLength(1);
+  });
+
+  it('saves seq and marks the row closed only with the final state', async () => {
+    const h = harness();
+    h.manager.accept('sess', snap(1), TARGET);
+    await h.run(8000);
+    expect(h.saved.at(-1)).toMatchObject({ seq: 1, closed: 0 });
+    h.manager.accept('sess', snap(2, { status: 'failed' }), TARGET);
+    await h.run(1000);
+    expect(h.saved.at(-1)).toMatchObject({ seq: 2, status: 'failed', closed: 1 });
   });
 
   it('ignores stale snapshots', async () => {

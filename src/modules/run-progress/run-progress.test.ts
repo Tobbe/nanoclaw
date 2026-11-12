@@ -111,3 +111,49 @@ describe('resolveCardTarget', () => {
     }
   });
 });
+
+describe('run_progress handler persistence', () => {
+  it('records a final snapshot for a posted card before returning', async () => {
+    const { initTestDb, closeDb, getDb } = await import('../../db/connection.js');
+    const { runMigrations } = await import('../../db/migrations/index.js');
+    const { saveRunCard } = await import('./store.js');
+    await runMigrations(await initTestDb());
+    try {
+      await getDb().run(
+        `INSERT INTO messaging_groups (id, channel_type, platform_id, instance, name, is_group, unknown_sender_policy, created_at)
+         VALUES ('mg-1', 'slack', 'slack:C1', 'slack', 'marketing', 1, 'strict', '2026-11-12T00:00:00.000Z')`,
+      );
+      await saveRunCard({
+        session_id: 'sess-p',
+        run_id: 'run-p',
+        channel_type: 'slack',
+        platform_id: 'slack:C1',
+        thread_id: 'slack:C1:1.0',
+        instance: 'slack',
+        platform_message_id: 'ts-1',
+        status: 'running',
+        seq: 1,
+        snapshot_json: '{}',
+        closed: 0,
+        created_at: '2026-11-12T10:00:00.000Z',
+        updated_at: '2026-11-12T10:00:00.000Z',
+      });
+      const handler = getDeliveryAction('run_progress')!;
+      await handler(
+        {
+          action: 'run_progress',
+          snapshot: snapshot({ runId: 'run-p', seq: 2, status: 'done' }),
+          target: { channelType: 'slack', platformId: 'slack:C1', threadId: 'slack:C1:1.0' },
+        },
+        { id: 'sess-p', messaging_group_id: 'mg-1', thread_id: 'slack:C1:1.0' } as never,
+      );
+      // Durable once the handler returns, i.e. before delivery marks the row delivered.
+      const row = await getDb().get<{ seq: number; status: string; closed: number }>(
+        "SELECT seq, status, closed FROM run_progress_cards WHERE run_id = 'run-p'",
+      );
+      expect(row).toEqual({ seq: 2, status: 'done', closed: 0 });
+    } finally {
+      await closeDb();
+    }
+  });
+});

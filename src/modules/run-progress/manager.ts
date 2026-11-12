@@ -147,7 +147,12 @@ export class RunCardManager {
     });
   }
 
-  /** Re-adopt a card a previous host left open. Closed as Interrupted unless its run reports in. */
+  /**
+   * Re-adopt a card a previous host left open, with the newest snapshot the
+   * old host accepted. A finished run gets its final state at once; a live
+   * one is re-rendered and kept, or closed as Interrupted if its container
+   * doesn't come back.
+   */
   restore(row: RunCardRow, snapshot: RunProgressSnapshot): void {
     const key = `${row.session_id}:${row.run_id}`;
     if (this.cards.has(key)) return;
@@ -168,7 +173,8 @@ export class RunCardManager {
       messageId: row.platform_message_id,
       inFlight: false,
       lastEditAt: now,
-      renderedSeq: snapshot.seq,
+      // Unknown what the old host last showed: render the stored snapshot again.
+      renderedSeq: 0,
       renderedFinal: false,
       interrupted: false,
       backoffUntil: 0,
@@ -249,7 +255,7 @@ export class RunCardManager {
       card.renderedSeq = snapshot.seq;
       const wroteFinal = interrupted || isFinal(snapshot.status);
       if (wroteFinal) card.renderedFinal = true;
-      await this.persist(card, snapshot, interrupted ? 'cancelled' : snapshot.status);
+      await this.persist(card, snapshot, interrupted ? 'cancelled' : snapshot.status, wroteFinal);
     } catch (err) {
       card.backoffUntil = this.now() + this.config.backoffMs;
       if (op.kind === 'final' && ++card.finalAttempts >= this.config.maxFinalAttempts) {
@@ -277,7 +283,7 @@ export class RunCardManager {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 
-  private async persist(card: Card, snapshot: RunProgressSnapshot, status: string): Promise<void> {
+  private async persist(card: Card, snapshot: RunProgressSnapshot, status: string, closed: boolean): Promise<void> {
     try {
       await this.deps.save({
         session_id: card.sessionId,
@@ -288,7 +294,9 @@ export class RunCardManager {
         instance: card.target.instance,
         platform_message_id: card.messageId!,
         status,
+        seq: snapshot.seq,
         snapshot_json: JSON.stringify(snapshot),
+        closed: closed ? 1 : 0,
         created_at: card.createdAtIso,
         updated_at: new Date(this.now()).toISOString(),
       });

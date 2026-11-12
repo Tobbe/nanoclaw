@@ -19,7 +19,7 @@ import { log } from '../../log.js';
 import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
 import { parseRunProgressSnapshot, type RunProgressSnapshot } from './snapshot.js';
-import { listOpenRunCards, pruneFinishedRunCards, rowSnapshot, saveRunCard } from './store.js';
+import { listOpenRunCards, pruneFinishedRunCards, recordRunCardSnapshot, rowSnapshot, saveRunCard } from './store.js';
 
 export { parseRunProgressSnapshot, type RunProgressSnapshot } from './snapshot.js';
 
@@ -123,6 +123,13 @@ export async function handleRunProgress(content: Record<string, unknown>, sessio
   });
   const target = await resolveCardTarget(session, content.target);
   if (!target) return;
+  // Durable before the outbound row is marked delivered (delivery awaits this
+  // handler): a restart can't lose a final state the card hasn't shown yet.
+  try {
+    await recordRunCardSnapshot(session.id, snapshot, new Date().toISOString());
+  } catch (err) {
+    log.warn('run_progress: could not record snapshot', { sessionId: session.id, runId: snapshot.runId, err });
+  }
   // Hand off and return: the card is updated from the manager's own tick,
   // never from the delivery path.
   runCards.accept(session.id, snapshot, target);
