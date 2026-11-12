@@ -113,6 +113,10 @@ It writes the snapshot as `kind:'system'` with content `{action:'run_progress', 
 - **Rate limits.** At most one edit every 3s per card, plus a limit across the whole install, because Slack
   `chat.update` limits apply per method per workspace. If Slack returns 429, keep the newest snapshot and retry
   later.
+- **No long retries for card edits.** By default the Slack adapter's WebClient retries a rate-limited (429) call for
+  about 30 minutes (`retryPolicies.tenRetriesInAboutThirtyMinutes`), which could hold up real replies.
+  Card edits use a short timeout, are not retried, and are never awaited on the reply delivery path.
+  A dropped edit is fine, because the next snapshot replaces it.
 - **Elapsed-time refresh** (asked for 2026-11-12). While a run is running or waiting, the host re-renders the
   card when no edit has happened for **15s**, so the elapsed time keeps moving through one long step.
   - Elapsed is computed on the host from `startedAt`, so a refresh doesn't need a new snapshot.
