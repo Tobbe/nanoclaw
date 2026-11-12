@@ -20,6 +20,7 @@ import {
   LinkButton,
   Table,
   type CardChild,
+  type CardElement,
   type Adapter,
   type AssistantContextChangedEvent,
   type AssistantThreadStartedEvent,
@@ -597,6 +598,67 @@ function buildCardPart(part: CardPart): CardChild {
   }
 }
 
+/**
+ * Build a display card (`{ type: 'card', card, fallbackText }` content) for
+ * posting or for editing an existing message in place. Only link buttons
+ * render: display cards are fire-and-forget, so a callback button would have
+ * nowhere to land. Throws when the card breaks the card-part limits; returns
+ * null for an empty card.
+ */
+function buildDisplayCard(content: Record<string, unknown>): { card: CardElement; fallbackText: string } | null {
+  const cardSpec = content.card as Record<string, unknown>;
+  const title = (cardSpec.title as string) || '';
+  const fallbackText = (content.fallbackText as string) || (cardSpec.description as string) || title || '';
+
+  // Checked again here: anything in the container can write this row, not only send_card.
+  const problems = cardProblems(cardSpec);
+  if (problems.length > 0) throw new Error(`send_card card refused: ${problems.join('; ')}`);
+
+  const cardChildren: CardChild[] = [];
+  if (typeof cardSpec.description === 'string' && cardSpec.description) {
+    cardChildren.push(CardText(cardSpec.description));
+  }
+  if (Array.isArray(cardSpec.children)) {
+    for (const child of cardSpec.children) {
+      if (isCardPart(child)) {
+        cardChildren.push(buildCardPart(child));
+      } else if (typeof child === 'string' && child) {
+        cardChildren.push(CardText(child));
+      } else if (child && typeof child === 'object' && typeof (child as Record<string, unknown>).text === 'string') {
+        cardChildren.push(CardText((child as Record<string, string>).text));
+      }
+    }
+  }
+  if (Array.isArray(cardSpec.actions)) {
+    const linkButtons = (cardSpec.actions as Array<Record<string, unknown> | null | undefined>)
+      .filter(
+        (a): a is Record<string, unknown> =>
+          !!a &&
+          typeof a === 'object' &&
+          typeof a.url === 'string' &&
+          !!a.url &&
+          typeof a.label === 'string' &&
+          !!a.label,
+      )
+      .map((a) => {
+        const style = a.style;
+        const safeStyle: 'primary' | 'danger' | 'default' | undefined =
+          style === 'primary' || style === 'danger' || style === 'default' ? style : undefined;
+        return LinkButton({
+          label: a.label as string,
+          url: a.url as string,
+          style: safeStyle,
+        });
+      });
+    if (linkButtons.length > 0) {
+      cardChildren.push(Actions(linkButtons));
+    }
+  }
+
+  if (cardChildren.length === 0 && !title) return null;
+  return { card: Card({ title, children: cardChildren }), fallbackText };
+}
+
 export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter {
   const { adapter } = config;
   // The instance name becomes a webhook route segment (the route regex is
@@ -982,6 +1044,17 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       const content = message.content as Record<string, unknown>;
 
       if (content.operation === 'edit' && content.messageId) {
+        // Replace an existing message with a display card (the run card's
+        // in-place updates). Same builder and limits as a posted card.
+        if (content.type === 'card' && content.card && typeof content.card === 'object') {
+          const built = buildDisplayCard(content);
+          if (!built) {
+            log.warn('card edit payload empty, skipping', { messageId: content.messageId });
+            return;
+          }
+          await adapter.editMessage(tid, content.messageId as string, built);
+          return;
+        }
         const render =
           typeof content.questionId === 'string' ? await resolveQuestionRender(content.questionId) : undefined;
         if (render?.renderTerminal && content.terminalCard) {
@@ -1068,66 +1141,12 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       // The runner filters these against LINK_ACTION_SCHEMA before writing the row;
       // the checks below still stand because any producer can write this payload.
       if (content.type === 'card' && content.card && typeof content.card === 'object') {
-        const cardSpec = content.card as Record<string, unknown>;
-        const title = (cardSpec.title as string) || '';
-        const fallbackText = (content.fallbackText as string) || (cardSpec.description as string) || title || '';
-
-        // Checked again here: anything in the container can write this row, not only send_card.
-        const problems = cardProblems(cardSpec);
-        if (problems.length > 0) throw new Error(`send_card card refused: ${problems.join('; ')}`);
-
-        const cardChildren: CardChild[] = [];
-        if (typeof cardSpec.description === 'string' && cardSpec.description) {
-          cardChildren.push(CardText(cardSpec.description));
-        }
-        if (Array.isArray(cardSpec.children)) {
-          for (const child of cardSpec.children) {
-            if (isCardPart(child)) {
-              cardChildren.push(buildCardPart(child));
-            } else if (typeof child === 'string' && child) {
-              cardChildren.push(CardText(child));
-            } else if (
-              child &&
-              typeof child === 'object' &&
-              typeof (child as Record<string, unknown>).text === 'string'
-            ) {
-              cardChildren.push(CardText((child as Record<string, string>).text));
-            }
-          }
-        }
-        if (Array.isArray(cardSpec.actions)) {
-          const linkButtons = (cardSpec.actions as Array<Record<string, unknown> | null | undefined>)
-            .filter(
-              (a): a is Record<string, unknown> =>
-                !!a &&
-                typeof a === 'object' &&
-                typeof a.url === 'string' &&
-                !!a.url &&
-                typeof a.label === 'string' &&
-                !!a.label,
-            )
-            .map((a) => {
-              const style = a.style;
-              const safeStyle: 'primary' | 'danger' | 'default' | undefined =
-                style === 'primary' || style === 'danger' || style === 'default' ? style : undefined;
-              return LinkButton({
-                label: a.label as string,
-                url: a.url as string,
-                style: safeStyle,
-              });
-            });
-          if (linkButtons.length > 0) {
-            cardChildren.push(Actions(linkButtons));
-          }
-        }
-
-        if (cardChildren.length === 0 && !title) {
+        const built = buildDisplayCard(content);
+        if (!built) {
           log.warn('send_card payload empty, skipping delivery');
           return;
         }
-
-        const card = Card({ title, children: cardChildren });
-        const result = await adapter.postMessage(tid, { card, fallbackText });
+        const result = await adapter.postMessage(tid, built);
         return result?.id;
       }
 

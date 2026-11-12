@@ -1594,3 +1594,54 @@ describe('createChatSdkBridge — local Gateway webhook', () => {
     }
   });
 });
+
+it('edits an existing message into a display card (run card updates)', async () => {
+  const { calls, postMessage } = makePostCapture();
+  const edits: PostCall[] = [];
+  const bridge = createChatSdkBridge({
+    adapter: stubAdapter({
+      postMessage,
+      editMessage: async (threadId, _id, message) => {
+        edits.push({ threadId, message });
+        return { id: 'card', threadId, raw: {} };
+      },
+    }),
+    supportsThreads: true,
+  });
+  const content = {
+    type: 'card',
+    card: { title: '⏳ Working on it · 12s', children: ['✓ Found the page\n◉ Editing headline'] },
+    fallbackText: 'Working on it',
+  };
+  await bridge.deliver('stub:C1', 'stub:C1:1.0', { kind: 'chat-sdk', content });
+  await bridge.deliver('stub:C1', 'stub:C1:1.0', {
+    kind: 'chat-sdk',
+    content: { ...content, card: { ...content.card, title: '✅ Done · 40s' }, operation: 'edit', messageId: 'ts-1' },
+  });
+  expect(calls).toHaveLength(1);
+  expect(edits).toHaveLength(1);
+  expect(edits[0].threadId).toBe('stub:C1:1.0');
+  const edited = edits[0].message as { card: { title?: string }; fallbackText: string };
+  expect(edited.fallbackText).toBe('Working on it');
+  expect(JSON.stringify(edited.card)).toContain('✅ Done · 40s');
+  // Same builder as a posted card: one shape on both paths.
+  expect(Object.keys(edited).sort()).toEqual(Object.keys(calls[0].message as object).sort());
+});
+
+it('refuses a card edit that breaks the card limits', async () => {
+  const bridge = createChatSdkBridge({
+    adapter: stubAdapter({ editMessage: async () => ({ id: 'x', threadId: 't', raw: {} }) }),
+    supportsThreads: false,
+  });
+  await expect(
+    bridge.deliver('stub:C1', null, {
+      kind: 'chat-sdk',
+      content: {
+        type: 'card',
+        operation: 'edit',
+        messageId: 'ts-1',
+        card: { title: 'Too many parts', children: Array.from({ length: 11 }, () => ({ type: 'Divider' })) },
+      },
+    }),
+  ).rejects.toThrow(/card refused/);
+});

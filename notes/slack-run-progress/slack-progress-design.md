@@ -115,13 +115,13 @@ It writes the snapshot as `kind:'system'` with content `{action:'run_progress', 
   later.
 - **No long retries for card edits.** By default the Slack adapter's WebClient retries a rate-limited (429) call for
   about 30 minutes (`retryPolicies.tenRetriesInAboutThirtyMinutes`), which could hold up real replies.
-  Card edits use a short timeout, are not retried, and are never awaited on the reply delivery path.
-  A dropped edit is fine, because the next snapshot replaces it.
+  As built: card calls run from the card manager's own 1s tick, never from the delivery path, so replies
+  never wait on them. An edit still pending after 15s is abandoned; the next edit replaces it, after a 30s
+  back-off. Posts are never abandoned, so a late post can't create a second card.
 - **Elapsed-time refresh** (asked for 2026-11-12). While a run is running or waiting, the host re-renders the
   card when no edit has happened for **15s**, so the elapsed time keeps moving through one long step.
   - Elapsed is computed on the host from `startedAt`, so a refresh doesn't need a new snapshot.
-  - Under a minute it shows seconds; after that it shows minutes plus seconds rounded to the refresh interval
-    (`1m 30s`), so it never looks frozen or jumpy.
+  - It shows `45s`, `1m 05s` or `1h 02m`, exact at the moment of each edit.
   - Refreshes go through the same per-card and install-wide rate limits. When Slack is rate-limiting, they are
     the first thing to drop.
   - The timer stops at the final state, and a host restart re-arms it for non-final cards whose container is
@@ -235,7 +235,28 @@ CONTRIBUTING only accepts fixes, simplifications and small seams into core. Feat
 
 ## Status
 
-**M1 is done** (2026-11-12) on branch `feat/slack-run-progress` in `main/`; not yet committed.
+**M1 is done** (2026-11-12), committed as a5842b4e on `feat/slack-run-progress`.
+
+**M3 is done** (2026-11-12) on the same branch. It is tested against a fake Slack only; it has not been seen in a real workspace yet.
+- `src/channels/chat-sdk-bridge.ts`: display-card building is pulled into `buildDisplayCard`.
+  `{type:'card', operation:'edit', messageId}` now edits a message into a card, using the same builder and limits as a posted card.
+- `src/modules/run-progress/render.ts`: snapshot plus now → card and text fallback.
+  - Title is `⏳ Working on it · 1m 24s`, `⏸️ Waiting for an answer`, `✅ Done`, `❌ Failed`, `⏹️ Stopped` or `⏹️ Interrupted`.
+  - The body is the plan (✓ ◉ ○) plus "Latest: …", or the last 5 steps when there is no plan.
+  - A summary line ("6 steps · 1 failed") is added at the end.
+  - Agent text is neutralized: hidden characters are made visible, and `<`/`>` are swapped so text can't become a Slack mention or link.
+- `src/modules/run-progress/manager.ts`: one card per run.
+  - Posts it after 8s, or at once when the run starts waiting on a person.
+  - Edits on change at most every 3s, refreshes every 15s, and writes the final state.
+  - Marks a card "Interrupted" when its container has been gone for 30s.
+  - Never reopens a finished run.
+  - Starts at most 1 platform call per second across the install: final states first, refreshes last.
+- `src/modules/run-progress/store.ts`: module migration `module:run-progress:cards` (table `run_progress_cards`).
+  At startup, open cards are restored and closed as Interrupted if their container doesn't come back. Finished rows are pruned after 7 days.
+- The runner now also puts the route in the payload, because system-action handlers don't see the row's columns.
+  The host honors it only when it names the session's own chat.
+- Known edge: if a host restart happens after a run's final snapshot was delivered but before the card's final edit,
+  the card stays "Working" until the container exits. It then becomes "Interrupted".
 
 Container side (`container/agent-runner/src/`):
 - `progress/types.ts`: the progress model.
@@ -246,9 +267,10 @@ Container side (`container/agent-runner/src/`):
 - `poll-loop.ts`: a run starts at the first progress event and ends at the turn's result. Retries keep it open; a throw ends it as failed or cancelled.
 
 Host side:
-- `src/modules/run-progress/` validates incoming snapshots, keeps the newest `seq` per run, and debug-logs it. There is no Slack UI yet.
+- `src/modules/run-progress/` validates incoming snapshots and keeps the newest `seq` per run.
 
-Tests: 33 new agent-runner tests and 6 new host tests. Both full suites, format and both typechecks are green.
+Tests after M3: 4,705 host tests and 699 agent-runner tests pass. Format and both typechecks are green.
+M3 added 26 host tests (renderer, manager, store, target resolution, bridge card edit).
 
 ## 6. Decisions (2026-11-12)
 

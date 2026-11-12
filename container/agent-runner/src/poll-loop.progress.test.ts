@@ -72,6 +72,12 @@ describe('poll loop → run progress', () => {
     expect(first.row.platform_id).toBe('slack:C1');
     expect(first.row.channel_type).toBe('slack');
     expect(first.row.thread_id).toBe('slack:C1:1.0');
+    // The route also rides in the payload: the host's system-action handler doesn't see row columns.
+    expect((first.content as unknown as { target: unknown }).target).toEqual({
+      channelType: 'slack',
+      platformId: 'slack:C1',
+      threadId: 'slack:C1:1.0',
+    });
     const last = rows[rows.length - 1].content.snapshot;
     expect(last.status).toBe('done');
     expect(last.steps).toEqual([{ id: 'a', title: 'Read file-a.ts', state: 'done', category: 'inspect' }]);

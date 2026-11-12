@@ -85,3 +85,29 @@ describe('run_progress delivery action', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('resolveCardTarget', () => {
+  it('uses the session chat, the payload thread only when it names that chat', async () => {
+    const { initTestDb, closeDb, getDb } = await import('../../db/connection.js');
+    const { runMigrations } = await import('../../db/migrations/index.js');
+    const { resolveCardTarget } = await import('./index.js');
+    await runMigrations(await initTestDb());
+    try {
+      await getDb().run(
+        `INSERT INTO messaging_groups (id, channel_type, platform_id, instance, name, is_group, unknown_sender_policy, created_at)
+         VALUES ('mg-1', 'slack', 'slack:C1', 'slack', 'marketing', 1, 'strict', '2026-11-12T00:00:00.000Z')`,
+      );
+      const session = { id: 's', messaging_group_id: 'mg-1', thread_id: 'slack:C1:9.0' } as never;
+      expect(
+        await resolveCardTarget(session, { channelType: 'slack', platformId: 'slack:C1', threadId: 'slack:C1:1.0' }),
+      ).toEqual({ channelType: 'slack', platformId: 'slack:C1', threadId: 'slack:C1:1.0', instance: 'slack' });
+      // A payload naming some other chat can't redirect the card.
+      expect(
+        await resolveCardTarget(session, { channelType: 'slack', platformId: 'slack:C-OTHER', threadId: 'x' }),
+      ).toEqual({ channelType: 'slack', platformId: 'slack:C1', threadId: 'slack:C1:9.0', instance: 'slack' });
+      expect(await resolveCardTarget({ id: 's', messaging_group_id: null } as never, undefined)).toBeNull();
+    } finally {
+      await closeDb();
+    }
+  });
+});

@@ -787,7 +787,14 @@ const writeRunProgress: RunProgressWrite = async (snapshot, target) => {
     platform_id: target.platformId,
     channel_type: target.channelType,
     thread_id: target.threadId,
-    content: JSON.stringify({ action: RUN_PROGRESS_ACTION, snapshot }),
+    // System actions reach the host handler without the row's routing
+    // columns, so the route rides in the payload too; the host only honors
+    // it when it matches the session's own chat.
+    content: JSON.stringify({
+      action: RUN_PROGRESS_ACTION,
+      snapshot,
+      target: { channelType: target.channelType, platformId: target.platformId, threadId: target.threadId },
+    }),
   });
 };
 

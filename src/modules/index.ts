@@ -24,5 +24,5 @@ import './interactive/index.js';
 import './permissions/index.js';
 import './agent-to-agent/index.js';
 import './self-mod/index.js';
-import './community-portal/index.js';
 import './run-progress/index.js';
+import './community-portal/index.js';
