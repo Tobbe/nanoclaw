@@ -13,8 +13,9 @@ describe('summarizeStep', () => {
   it('never includes a Bash command in the title', () => {
     const command = 'curl -H "Authorization: Bearer sk-live-123" https://api.example.com/x';
     const s = summarizeStep('Bash', { command });
-    expect(s).toEqual({ title: 'Ran a command', category: 'run' });
+    expect(s).toEqual({ title: 'Fetched from the web', category: 'web' });
     expect(JSON.stringify(s)).not.toContain('sk-live');
+    expect(JSON.stringify(s)).not.toContain('example.com');
   });
 
   it('classifies test, build, install and git commands', () => {
@@ -26,8 +27,22 @@ describe('summarizeStep', () => {
       title: 'Installed dependencies',
       category: 'run',
     });
-    expect(classifyCommand('git status --short')).toEqual({ title: 'Used git', category: 'run' });
-    expect(classifyCommand('ls -la')).toEqual({ title: 'Ran a command', category: 'run' });
+    expect(classifyCommand('git status --short')).toEqual({ title: 'Checked what changed', category: 'run' });
+    expect(classifyCommand('ls -la')).toEqual({ title: 'Looked through the files', category: 'inspect' });
+  });
+
+  it('names common git and shell commands without echoing them', () => {
+    const title = (c: string) => classifyCommand(c).title;
+    expect(title('git clone --depth 1 https://github.com/acme/site.git /tmp/site')).toBe('Cloned a repository');
+    expect(title('cd /tmp/site && git -C . log --oneline -5')).toBe('Looked at the history');
+    expect(title('git commit -m "secret message"')).toBe('Committed changes');
+    expect(title('git push origin main')).toBe('Pushed changes');
+    expect(title('gh pr create --fill')).toBe('Worked on a pull request');
+    expect(title('git rev-parse HEAD')).toBe('Used git');
+    expect(title('cat README.md | head -50')).toBe('Read a file');
+    expect(title('mkdir -p out && cp a b')).toBe('Organised files');
+    expect(title('python3 scripts/build_index.py')).toBe('Ran a script');
+    expect(title('echo hi')).toBe('Ran a command');
   });
 
   it('uses the model description for Bash only in detailed mode', () => {

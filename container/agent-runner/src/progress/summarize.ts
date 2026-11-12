@@ -29,6 +29,37 @@ const BUILD_COMMAND =
 const GIT_COMMAND = /(^|[\s;&|(])(git|gh)\s/;
 const INSTALL_COMMAND = /(^|[\s;&|(])((pnpm|npm|yarn|bun)\s+(install|add|i)\b|pip\s+install\b|apt(-get)?\s+install\b)/;
 
+/** Starts of a command segment: line start or after a shell separator. */
+const SEG = String.raw`(^|[;&|(]\s*|&&\s*|\|\|\s*)`;
+
+/** `git` plus any global options (`-C dir`, `--no-pager`) before the subcommand. */
+const GIT = String.raw`\bgit\s+(?:-\S+(?:\s+(?!-)\S+)?\s+)*?`;
+const git = (sub: string) => new RegExp(`${GIT}(${sub})\\b`);
+
+/** git/gh subcommands → a fixed, specific label. First match wins. */
+const GIT_LABELS: Array<[RegExp, string]> = [
+  [git('clone'), 'Cloned a repository'],
+  [git('commit'), 'Committed changes'],
+  [git('push'), 'Pushed changes'],
+  [git('pull|fetch'), 'Pulled the latest changes'],
+  [git('checkout|switch|branch'), 'Switched branches'],
+  [git('diff|status'), 'Checked what changed'],
+  [git('log|show|blame'), 'Looked at the history'],
+  [git('add|rm|mv|restore|stash|reset'), 'Staged changes'],
+  [/\bgh\s+pr\b/, 'Worked on a pull request'],
+  [/\bgh\s+issue\b/, 'Looked at issues'],
+];
+
+/** Everyday shell commands → a fixed label, matched on the first command of the line. */
+const SHELL_LABELS: Array<[RegExp, StepSummary]> = [
+  [new RegExp(`${SEG}(ls|tree|find|fd)\\b`), { title: 'Looked through the files', category: 'inspect' }],
+  [new RegExp(`${SEG}(cat|head|tail|less|wc|sed\\s+-n)\\b`), { title: 'Read a file', category: 'inspect' }],
+  [new RegExp(`${SEG}(grep|rg|ag)\\b`), { title: 'Searched the code', category: 'inspect' }],
+  [new RegExp(`${SEG}(curl|wget)\\b`), { title: 'Fetched from the web', category: 'web' }],
+  [new RegExp(`${SEG}(mkdir|cp|mv|rm|touch|ln)\\b`), { title: 'Organised files', category: 'edit' }],
+  [new RegExp(`${SEG}(python3?|node|bun|deno|tsx|ruby|bash|sh)\\s+\\S`), { title: 'Ran a script', category: 'run' }],
+];
+
 const MAX_NAME = 60;
 
 function str(input: unknown, key: string): string | undefined {
@@ -61,7 +92,11 @@ export function classifyCommand(command: string): StepSummary {
   if (TEST_COMMAND.test(command)) return { title: 'Ran tests', category: 'test' };
   if (BUILD_COMMAND.test(command)) return { title: 'Ran a build', category: 'run' };
   if (INSTALL_COMMAND.test(command)) return { title: 'Installed dependencies', category: 'run' };
-  if (GIT_COMMAND.test(command)) return { title: 'Used git', category: 'run' };
+  if (GIT_COMMAND.test(command)) {
+    for (const [pattern, title] of GIT_LABELS) if (pattern.test(command)) return { title, category: 'run' };
+    return { title: 'Used git', category: 'run' };
+  }
+  for (const [pattern, summary] of SHELL_LABELS) if (pattern.test(command)) return { ...summary };
   return { title: 'Ran a command', category: 'run' };
 }
 

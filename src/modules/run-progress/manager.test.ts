@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { RunCardManager, type CardTarget, type RunCardConfig } from './manager.js';
+import type { RenderedCard } from './render.js';
 import type { RunProgressSnapshot } from './snapshot.js';
 import type { RunCardRow } from './store.js';
+
+/** The card's status line, without the bold markers. */
+const headline = (content: RenderedCard['content']): string =>
+  (content.card.children[0]?.props.content ?? '').replace(/\*/g, '');
 
 const T0 = Date.parse('2026-11-12T10:00:00.000Z');
 const TARGET: CardTarget = {
@@ -48,7 +53,7 @@ function harness(
   const manager = new RunCardManager({
     io: {
       async post(_target, content) {
-        calls.push({ op: 'post', title: content.card.title, at: clock });
+        calls.push({ op: 'post', title: headline(content), at: clock });
         return 'ts-1';
       },
       async edit(_target, messageId, content) {
@@ -57,7 +62,7 @@ function harness(
           failEdits--;
           throw new Error('ratelimited');
         }
-        calls.push({ op: 'edit', messageId, title: content.card.title, at: clock });
+        calls.push({ op: 'edit', messageId, title: headline(content), at: clock });
       },
     },
     save: async (row) => {
@@ -123,7 +128,7 @@ describe('RunCardManager', () => {
     h.manager.accept('sess', snap(1, { status: 'waiting', waiting: { on: 'question', summary: 'Which?' } }), TARGET);
     await h.run(1000);
     expect(h.calls.map((c) => c.op)).toEqual(['post']);
-    expect(h.calls[0].title).toContain('Waiting for an answer');
+    expect(h.calls[0].title).toContain('Waiting for your answer');
   });
 
   it('edits on change no more than every 3s', async () => {
@@ -164,7 +169,7 @@ describe('RunCardManager', () => {
     await h.run(8000);
     h.manager.accept('sess', snap(2, { status: 'done', updatedAt: new Date(T0 + 9000).toISOString() }), TARGET);
     await h.run(1000);
-    expect(h.calls.at(-1)).toMatchObject({ op: 'edit', title: '✅ Done · 9s' });
+    expect(h.calls.at(-1)).toMatchObject({ op: 'edit', title: '✅ Done in 9s · 1 step' });
     expect(h.saved.at(-1)?.status).toBe('done');
     await h.run(1000);
     expect(h.manager.size).toBe(0);
@@ -278,7 +283,9 @@ describe('RunCardManager', () => {
     const h = harness({ running: false });
     h.manager.restore(row, snap(7, { status: 'done', updatedAt: new Date(T0 + 42_000).toISOString() }));
     await h.run(1000);
-    expect(h.calls).toEqual([expect.objectContaining({ op: 'edit', messageId: 'ts-old', title: '✅ Done · 42s' })]);
+    expect(h.calls).toEqual([
+      expect.objectContaining({ op: 'edit', messageId: 'ts-old', title: '✅ Done in 42s · 1 step' }),
+    ]);
     expect(h.saved.at(-1)).toMatchObject({ status: 'done', seq: 7, closed: 1 });
     await h.run(40_000);
     expect(h.calls).toHaveLength(1);

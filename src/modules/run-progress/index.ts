@@ -12,12 +12,14 @@
  * the payload is honored only when it names that chat.
  */
 import { getMessagingGroup } from '../../db/messaging-groups.js';
-import { getDeliveryAdapter, registerDeliveryAction } from '../../delivery.js';
+import { getDeliveryAdapter, registerDeliveryAction, registerPostDeliveryHook } from '../../delivery.js';
 import { unguarded } from '../../guard/index.js';
 import { onHostShutdown, onHostStart } from '../../host-lifecycle.js';
 import { log } from '../../log.js';
+import { registerMessageEngagedHook } from '../../router.js';
 import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
+import { Receipts } from './receipts.js';
 import { parseRunProgressSnapshot, type RunProgressSnapshot } from './snapshot.js';
 import { listOpenRunCards, pruneFinishedRunCards, recordRunCardSnapshot, rowSnapshot, saveRunCard } from './store.js';
 
@@ -85,6 +87,45 @@ export const runCards = new RunCardManager({
   log,
 });
 
+/** 👀 on arrival, ✅ when done — see ./receipts.ts. */
+export const receipts = new Receipts({
+  io: {
+    async react(target, messageId, emoji, remove) {
+      const adapter = getDeliveryAdapter();
+      if (!adapter) throw new Error('no delivery adapter');
+      await adapter.deliver(
+        target.channelType,
+        target.platformId,
+        target.threadId,
+        'chat-sdk',
+        JSON.stringify({ operation: 'reaction', messageId, emoji, ...(remove ? { remove: true } : {}) }),
+        undefined,
+        target.instance,
+      );
+    },
+  },
+  isContainerRunning: (sessionId) => containerRunning(sessionId),
+  log,
+});
+
+registerMessageEngagedHook((event) => {
+  // Only chat-platform messages (not the CLI), and only where the reply goes
+  // back to the same chat — a reaction elsewhere would make no sense.
+  if (event.kind !== 'chat-sdk' || event.redirected) return;
+  receipts.received(
+    event.session.id,
+    {
+      channelType: event.channelType,
+      platformId: event.platformId,
+      threadId: event.threadId,
+      instance: event.instance,
+    },
+    event.messageId,
+  );
+});
+
+registerPostDeliveryHook((_msg, session) => receipts.replied(session.id));
+
 /**
  * Where a session's card goes: the session's own chat, in the payload's
  * thread when the payload names that same chat. Null when the session has no
@@ -112,6 +153,7 @@ export async function handleRunProgress(content: Record<string, unknown>, sessio
     return;
   }
   if (!recordRunProgress(session.id, snapshot)) return;
+  receipts.runUpdate(session.id, snapshot.status);
   const running = snapshot.steps.find((s) => s.state === 'running');
   log.debug('run_progress', {
     sessionId: session.id,
@@ -157,6 +199,7 @@ onHostStart(async () => {
     log.warn('Run cards: restore failed', { err });
   }
   tickTimer = setInterval(() => {
+    receipts.sweep();
     if (ticking) return;
     ticking = true;
     runCards

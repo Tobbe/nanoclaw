@@ -1081,7 +1081,11 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       }
 
       if (content.operation === 'reaction' && content.messageId && content.emoji) {
-        await adapter.addReaction(tid, content.messageId as string, content.emoji as string);
+        if (content.remove === true) {
+          await adapter.removeReaction(tid, content.messageId as string, content.emoji as string);
+        } else {
+          await adapter.addReaction(tid, content.messageId as string, content.emoji as string);
+        }
         return;
       }
 

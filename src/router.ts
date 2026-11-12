@@ -190,6 +190,52 @@ export function registerSessionCreatedHook(hook: SessionCreatedHook): void {
   sessionCreatedHooks.push(hook);
 }
 
+/**
+ * Message-engaged hook. Fires after a message that wakes an agent has been
+ * written to its session's inbound DB — every engaged message, not only the
+ * first of a session. Modules use it to acknowledge receipt on the platform
+ * (e.g. a reaction) before the agent has produced anything.
+ *
+ * Fire-and-forget, like the session-created hook: a failing hook can never
+ * affect routing or the container wake.
+ */
+export interface MessageEngagedEvent {
+  session: Session;
+  mg: MessagingGroup;
+  /** Where the message arrived. */
+  channelType: string;
+  platformId: string;
+  /** Resolved thread id after the wiring's thread policy (null = no thread). */
+  threadId: string | null;
+  /** Adapter instance the message arrived on. */
+  instance: string;
+  /** The platform's own id for the message. */
+  messageId: string;
+  kind: string;
+  /** True when replies go somewhere other than where the message arrived. */
+  redirected: boolean;
+}
+
+export type MessageEngagedHook = (event: MessageEngagedEvent) => void | Promise<void>;
+
+const messageEngagedHooks: MessageEngagedHook[] = [];
+
+export function registerMessageEngagedHook(hook: MessageEngagedHook): void {
+  messageEngagedHooks.push(hook);
+}
+
+function dispatchMessageEngaged(event: MessageEngagedEvent): void {
+  for (const hook of messageEngagedHooks) {
+    try {
+      Promise.resolve(hook(event)).catch((err) =>
+        log.error('Message-engaged hook failed', { sessionId: event.session.id, err }),
+      );
+    } catch (err) {
+      log.error('Message-engaged hook threw', { sessionId: event.session.id, err });
+    }
+  }
+}
+
 function dispatchSessionCreated(event: SessionCreatedEvent): void {
   for (const hook of sessionCreatedHooks) {
     try {
@@ -659,6 +705,17 @@ async function deliverToAgent(
   });
 
   if (wake) {
+    dispatchMessageEngaged({
+      session,
+      mg,
+      channelType: event.channelType,
+      platformId: event.platformId,
+      threadId: effectiveThreadId,
+      instance: event.instance ?? mg.instance ?? event.channelType,
+      messageId: event.message.id,
+      kind: event.message.kind,
+      redirected: event.replyTo !== undefined,
+    });
     // Typing indicator + wake are only for the engaged branch; accumulated
     // messages sit silently until a real trigger fires.
     // Typing fires via the adapter instance that owns this chat's row.

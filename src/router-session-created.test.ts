@@ -20,7 +20,13 @@ import {
   createMessagingGroupAgent,
 } from './db/index.js';
 import { initChannelAdapters, registerChannelAdapter, teardownChannelAdapters } from './channels/channel-registry.js';
-import { registerSessionCreatedHook, routeInbound, type SessionCreatedEvent } from './router.js';
+import {
+  registerMessageEngagedHook,
+  registerSessionCreatedHook,
+  routeInbound,
+  type MessageEngagedEvent,
+  type SessionCreatedEvent,
+} from './router.js';
 import type { ChannelAdapter, ChannelDefaults } from './channels/adapter.js';
 import type { MessagingGroupAgent } from './types.js';
 
@@ -233,5 +239,33 @@ describe('registerSessionCreatedHook', () => {
     // still woke the container.
     expect(after).toHaveLength(1);
     expect(vi.mocked(wakeContainer)).toHaveBeenCalled();
+  });
+});
+
+describe('registerMessageEngagedHook', () => {
+  it('fires for every engaged message with its platform id, and not for accumulated ones', async () => {
+    await activate();
+    await seedWiring({ isGroup: 1, engageMode: 'mention', ignoredMessagePolicy: 'accumulate', sessionMode: 'shared' });
+
+    const events: MessageEngagedEvent[] = [];
+    registerMessageEngagedHook((event) => {
+      events.push(event);
+    });
+
+    await inbound('m1', 'testchat:C1:171', 'no mention here', false);
+    expect(events).toHaveLength(0);
+
+    await inbound('m2', 'testchat:C1:171', 'now with a mention', true);
+    await inbound('m3', 'testchat:C1:171', 'and again', true);
+    expect(events.map((e) => e.messageId)).toEqual(['m2', 'm3']);
+    expect(events[0]).toMatchObject({
+      channelType: 'testchat',
+      platformId: 'testchat:C1',
+      threadId: 'testchat:C1:171',
+      instance: 'testchat',
+      kind: 'chat-sdk',
+      redirected: false,
+    });
+    expect(events[0].session.messaging_group_id).toBe('mg-1');
   });
 });

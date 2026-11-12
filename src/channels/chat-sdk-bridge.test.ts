@@ -644,6 +644,26 @@ describe('createChatSdkBridge.deliver — ask_question cards (button styles)', (
     expect(edited.card.children.at(-1)).toEqual({ type: 'text', content: 'Approved', style: 'muted' });
   });
 
+  it('adds a reaction, and removes one when the operation asks to', async () => {
+    const ops: string[] = [];
+    const bridge = createChatSdkBridge({
+      adapter: stubAdapter({
+        addReaction: async (_t, messageId, emoji) => void ops.push(`add ${messageId} ${String(emoji)}`),
+        removeReaction: async (_t, messageId, emoji) => void ops.push(`remove ${messageId} ${String(emoji)}`),
+      }),
+      supportsThreads: false,
+    });
+    await bridge.deliver('slack:D1', null, {
+      kind: 'chat-sdk',
+      content: { operation: 'reaction', messageId: '1.0', emoji: 'eyes' },
+    });
+    await bridge.deliver('slack:D1', null, {
+      kind: 'chat-sdk',
+      content: { operation: 'reaction', messageId: '1.0', emoji: 'eyes', remove: true },
+    });
+    expect(ops).toEqual(['add 1.0 eyes', 'remove 1.0 eyes']);
+  });
+
   it('measures the declared limit after escaping', async () => {
     const { calls, postMessage } = makePostCapture();
     const bridge = createChatSdkBridge({
