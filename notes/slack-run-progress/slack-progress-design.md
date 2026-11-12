@@ -113,6 +113,15 @@ It writes the snapshot as `kind:'system'` with content `{action:'run_progress', 
 - **Rate limits.** At most one edit every 3s per card, plus a limit across the whole install, because Slack
   `chat.update` limits apply per method per workspace. If Slack returns 429, keep the newest snapshot and retry
   later.
+- **Elapsed-time refresh** (asked for 2026-11-12). While a run is running or waiting, the host re-renders the
+  card when no edit has happened for **15s**, so the elapsed time keeps moving through one long step.
+  - Elapsed is computed on the host from `startedAt`, so a refresh doesn't need a new snapshot.
+  - Under a minute it shows seconds; after that it shows minutes plus seconds rounded to the refresh interval
+    (`1m 30s`), so it never looks frozen or jumpy.
+  - Refreshes go through the same per-card and install-wide rate limits. When Slack is rate-limiting, they are
+    the first thing to drop.
+  - The timer stops at the final state, and a host restart re-arms it for non-final cards whose container is
+    still running.
 - **When the run ends.**
   - The card gets its final state: "Done in 4m 12s · 6 steps" or "Failed: …". It doesn't repeat the reply text.
   - If the container exits without a final snapshot (crash, cancel, timeout), the existing container-exit hook
