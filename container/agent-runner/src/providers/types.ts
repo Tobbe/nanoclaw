@@ -1,4 +1,7 @@
 import type { MemorySessionHookRegistration } from '../memory/session-hook.js';
+import type { ProgressDetail } from '../progress/types.js';
+
+export type { ProgressDetail } from '../progress/types.js';
 
 /**
  * A speed tier name. The vocabulary is provider-declared (the host validates
@@ -175,7 +178,14 @@ export type ProviderEvent =
    */
   | { type: 'text'; text: string }
   | { type: 'error'; message: string; retryable: boolean; classification?: string }
-  | { type: 'progress'; message: string }
+  /**
+   * Progress during a turn. `message` is a short human-readable line (kept for
+   * logging and older consumers); `detail`, when a provider can supply it,
+   * carries the structured shape the run-progress sink renders. Providers must
+   * build `detail` titles from `summarizeStep` (../progress/summarize.ts) so raw
+   * commands, paths and tool output never leave the container.
+   */
+  | { type: 'progress'; message: string; detail?: ProgressDetail }
   | { type: 'file'; path: string }
   /**
    * Liveness signal. Providers MUST yield this on every underlying SDK

@@ -18,6 +18,7 @@ import {
 // Transcript archiving and rotation are this provider's own concern: both
 // read the SDK's on-disk .jsonl, which no other provider has.
 import { archiveClaudeTranscript, rotateClaudeContinuation } from './claude-history.js';
+import { ClaudeProgressTranslator } from './claude-progress.js';
 import { registerProvider } from './provider-registry.js';
 import type { AgentProvider, AgentQuery, ProviderEvent, ProviderOptions, QueryInput } from './types.js';
 
@@ -316,6 +317,7 @@ export class ClaudeProvider implements AgentProvider {
     async function* translateEvents(): AsyncGenerator<ProviderEvent> {
       let messageCount = 0;
       let lastStreamActivityAt = 0;
+      const progressTranslator = new ClaudeProgressTranslator();
       for await (const message of sdkResult) {
         if (aborted) return;
 
@@ -331,6 +333,10 @@ export class ClaudeProvider implements AgentProvider {
         }
         messageCount++;
         yield { type: 'activity' };
+
+        // Structured progress (tool steps, plan, waiting-on-a-person) rides
+        // alongside the existing translation; it never replaces an event below.
+        yield* progressTranslator.translate(message);
 
         if (message.type === 'system' && message.subtype === 'init') {
           yield { type: 'init', continuation: message.session_id };

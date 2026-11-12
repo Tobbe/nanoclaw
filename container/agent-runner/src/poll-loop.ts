@@ -34,6 +34,7 @@ import { stripHarnessTagArtifacts } from './harness-tag-strip.js';
 import { isUploadTraceCommand, uploadTrace } from './upload-trace.js';
 import type { AgentProvider, AgentQuery, ProviderEvent, ProviderExchange } from './providers/types.js';
 import type { ProviderRuntimeContract } from './provider-contracts/registry.js';
+import { RUN_PROGRESS_ACTION, RunProgressSink, type RunProgressWrite } from './progress/sink.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -374,6 +375,10 @@ export async function processQuery(
 ): Promise<QueryResult> {
   // adoptTurn mutates routing in place; keep the caller's batch route intact.
   routing = { ...routing };
+  // Live run progress for the answered turn (see progress/sink.ts). A run
+  // spans one turn including any wrap-nudge/task-block retries it triggers.
+  const runProgress = createRunProgressSink();
+  let progressRetryPending = false;
   let queryContinuation: string | undefined;
   let done = false;
   let unwrappedNudged = false;
@@ -447,6 +452,7 @@ export async function processQuery(
   // A retry is another provider input, behind any follow-ups already pushed.
   // Preserve its original route, prompt and retry guards until it is answered.
   const pushRetry = (prompt: string, retryOf?: SeqWindow): void => {
+    progressRetryPending = true;
     query.push(prompt);
     queuedTurns.push({ routing: { ...routing }, unwrappedNudged, taskBlockNudged, nudgedWindow: retryOf });
     archivePrompts.push(archivePrompts[0] ?? initialPrompt);
@@ -584,6 +590,7 @@ export async function processQuery(
     for await (const event of query.events) {
       handleEvent(event, routing);
       touchHeartbeat();
+      runProgress.onEvent(event, routing);
 
       if (event.type === 'init') {
         queryContinuation = event.continuation;
@@ -703,6 +710,9 @@ export async function processQuery(
         // genuinely re-sending the same body still delivers. The assembly
         // buffer dies with the turn: a fragment that never closed is not
         // carried into the next turn — the wrap-nudge owns that case.
+        // Close the run's progress unless a retry continues the same turn.
+        if (progressRetryPending) progressRetryPending = false;
+        else await runProgress.finish(event.isError === true ? 'failed' : 'done');
         midTurnSent = 0;
         midTurnReplied = 0;
         turnStartSeq = maxOutboundSeq();
@@ -718,6 +728,7 @@ export async function processQuery(
     // acknowledged, so an abandoned queued turn cannot rely on redelivery.
     done = true;
     const cancelled = endedForCommand || signal?.aborted;
+    await runProgress.finish(cancelled ? 'cancelled' : 'failed');
     const errMsg = err instanceof Error ? err.message : String(err);
     notifyExchangeComplete(onExchangeComplete, {
       prompt: archivePrompts[0] ?? initialPrompt,
@@ -761,9 +772,33 @@ export async function processQuery(
   } finally {
     done = true;
     clearInterval(pollHandle);
+    runProgress.dispose();
   }
 
   return { continuation: queryContinuation };
+}
+
+/** Writes one run-progress snapshot as a `run_progress` system action. */
+const writeRunProgress: RunProgressWrite = async (snapshot, target) => {
+  await writeMessageOut({
+    id: generateId(),
+    in_reply_to: target.inReplyTo,
+    kind: 'system',
+    platform_id: target.platformId,
+    channel_type: target.channelType,
+    thread_id: target.threadId,
+    content: JSON.stringify({ action: RUN_PROGRESS_ACTION, snapshot }),
+  });
+};
+
+/** On by default; `NANOCLAW_RUN_PROGRESS=off` disables it for a container. */
+function createRunProgressSink(): RunProgressSink {
+  return new RunProgressSink({
+    write: writeRunProgress,
+    newRunId: generateId,
+    enabled: process.env.NANOCLAW_RUN_PROGRESS !== 'off',
+    log,
+  });
 }
 
 function notifyExchangeComplete(
