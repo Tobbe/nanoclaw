@@ -1,14 +1,16 @@
 /**
- * Receipts: a 👀 reaction on a message the moment it reaches an agent, swapped
- * for ✅ (or ⚠️) when the work it started is over.
+ * Receipts: a 👀 reaction on a message the moment it reaches an agent,
+ * removed when the work it started is over — the reply right below says it's
+ * done. Only a failure leaves a mark (⚠️), since that's worth noticing.
  *
  * Slack only shows a bot "typing" inside a thread, so a top-level DM or
  * channel message would otherwise get no sign of life until the run card
- * appears (8s) or the answer lands. The reaction is the acknowledgement.
+ * appears (8s) or the answer lands. The reaction is the acknowledgement
+ * there; in a thread the typing indicator already says it, so no reaction.
  *
  * When is the work over?
- *   - A run that reports progress ends with its final snapshot (done →
- *     ✅, failed → ⚠️, stopped → 👀 just removed).
+ *   - A run that reports progress ends with its final snapshot (failed →
+ *     ⚠️; done or stopped → 👀 just removed).
  *   - A turn that reports no progress (a plain text answer) never sends a
  *     snapshot, so the first reply delivered while no run is live closes it.
  *   - Safety net: a receipt whose session has had no container for a while
@@ -19,8 +21,24 @@
 import type { CardTarget } from './manager.js';
 
 export const RECEIVED = 'eyes';
-export const DONE = 'white_check_mark';
 export const FAILED = 'warning';
+
+/** What a receipt needs to know about the engaged message. */
+export interface ReceiptCandidate {
+  kind: string;
+  redirected: boolean;
+  threadId: string | null;
+}
+
+/**
+ * Whether a message gets a receipt: chat-platform messages only (not the
+ * CLI), only where the reply goes back to the same chat, and only outside a
+ * thread — inside one the platform's typing indicator already shows the
+ * agent picked it up.
+ */
+export function wantsReceipt(event: ReceiptCandidate): boolean {
+  return event.kind === 'chat-sdk' && !event.redirected && event.threadId === null;
+}
 
 export interface ReceiptIO {
   react(target: CardTarget, messageId: string, emoji: string, remove: boolean): Promise<void>;
@@ -119,7 +137,7 @@ export class Receipts {
     for (const r of list) {
       // Remove first so the two never show together for long.
       void this.send(r.target, r.messageId, RECEIVED, true).then(() => {
-        if (outcome !== 'cancelled') return this.send(r.target, r.messageId, outcome === 'done' ? DONE : FAILED, false);
+        if (outcome === 'failed') return this.send(r.target, r.messageId, FAILED, false);
       });
     }
   }

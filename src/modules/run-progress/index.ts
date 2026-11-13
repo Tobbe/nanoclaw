@@ -19,7 +19,7 @@ import { log } from '../../log.js';
 import { registerMessageEngagedHook } from '../../router.js';
 import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
-import { Receipts } from './receipts.js';
+import { Receipts, wantsReceipt } from './receipts.js';
 import { parseRunProgressSnapshot, type RunProgressSnapshot } from './snapshot.js';
 import { listOpenRunCards, pruneFinishedRunCards, recordRunCardSnapshot, rowSnapshot, saveRunCard } from './store.js';
 
@@ -87,7 +87,7 @@ export const runCards = new RunCardManager({
   log,
 });
 
-/** 👀 on arrival, ✅ when done — see ./receipts.ts. */
+/** 👀 while working, removed when done (⚠️ on failure) — see ./receipts.ts. */
 export const receipts = new Receipts({
   io: {
     async react(target, messageId, emoji, remove) {
@@ -109,9 +109,7 @@ export const receipts = new Receipts({
 });
 
 registerMessageEngagedHook((event) => {
-  // Only chat-platform messages (not the CLI), and only where the reply goes
-  // back to the same chat — a reaction elsewhere would make no sense.
-  if (event.kind !== 'chat-sdk' || event.redirected) return;
+  if (!wantsReceipt(event)) return;
   receipts.received(
     event.session.id,
     {
