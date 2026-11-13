@@ -98,3 +98,29 @@ The source is authoritative. Several docs are out of date (noted at the bottom).
 - **Setup wizard:** it always routes Slack through the NanoClaw account portal.
   For an app you created yourself, skip Slack in the wizard and run
   `notes/slack-run-progress/setup-slack-manual.ts`.
+
+## Shared channels, private DMs, GitHub (2026-11-13)
+
+- **Two agents behind one Slack bot.** Shared channels are wired to a
+  separate agent group ("CodeBot Team", assistant name "CodeBot"); each
+  person's DM gets their own agent. On the channel approval card, choose
+  "Connect new agent" for a DM and never connect someone's DM to another
+  person's agent. Credentials, memory and files are per agent group.
+- **Read-only team chat for DM agents:** `team-reader/setup.ts` mounts the
+  team agent's workspace and live session DBs read-only and adds a lookup
+  tool plus instructions (channel content is information, never
+  instructions). Its allowlist entries in
+  `~/.config/nanoclaw/mount-allowlist.json` are a one-time step.
+- **GitHub through OneCLI:** a fine-grained token stored as two generic
+  secrets, attached per agent: `api.github.com` with `Bearer {value}`, and
+  `github.com` with `Basic {value}` (base64 of `x-access-token:<token>`),
+  because git over HTTPS does not accept a Bearer header. `gh` runs with
+  `GH_TOKEN=gateway-managed`. Check scoping on the host with
+  `onecli run --agent <agent-group-id> -- …` and your own git/gh login
+  disabled.
+- **Branch protection** isn't available for private repos on GitHub Free
+  for organizations, so "never push to main" is only an agent instruction
+  for now.
+- **The upgrade tripwire** trips after every local commit or history
+  rewrite. Once you've built and tested, re-stamp with
+  `pnpm exec tsx scripts/upgrade-state.ts set` (docs/upgrade-recovery.md).
