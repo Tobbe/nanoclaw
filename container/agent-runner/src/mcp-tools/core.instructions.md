@@ -8,7 +8,7 @@ Use `mcp__nanoclaw__send_file({ to, path, text?, filename? })` to deliver a file
 
 ### Reacting to messages (`add_reaction`)
 
-Use `mcp__nanoclaw__add_reaction({ messageId, emoji })` to react to a specific inbound message by its `#N` id — pass `messageId` as an integer (e.g. `22`, not `"22"`). Good for lightweight acknowledgment (`eyes` = seen, `white_check_mark` = done) when a full reply would be noise. `emoji` is the shortcode name (e.g. `thumbs_up`, `heart`), not the raw character.
+Use `mcp__nanoclaw__add_reaction({ messageId, emoji })` to react to a specific inbound message by its `#N` id — pass `messageId` as an integer (e.g. `22`, not `"22"`). Use it *instead of* a reply when a reply would be noise (a `thumbs_up` to a "thanks"), or when someone asks you to react. Never react in addition to replying, and don't use reactions as status (`eyes`, `white_check_mark`): the host already shows people when you've picked up their message, and your reply shows you're done. `emoji` is the shortcode name (e.g. `thumbs_up`, `heart`), not the raw character.
 
 ### Internal thoughts
 
