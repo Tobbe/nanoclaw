@@ -30,6 +30,19 @@ interface ContentBlock {
   input?: unknown;
   tool_use_id?: string;
   is_error?: boolean;
+  content?: unknown;
+}
+
+/** The SDK's error for a call to a tool that isn't defined. */
+const NO_SUCH_TOOL = /No such tool available/;
+
+/** A tool result's text: a string, or the text parts of a content array. */
+function resultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string' ? (part as { text: string }).text : ''))
+    .join('\n');
 }
 
 function clip(text: string, max: number): string {
@@ -86,7 +99,7 @@ export class ClaudeProgressTranslator {
       if (m.type === 'assistant' && block.type === 'tool_use' && block.id && block.name) {
         events.push(...this.onToolUse(block.id, block.name, block.input));
       } else if (m.type === 'user' && block.type === 'tool_result' && block.tool_use_id) {
-        events.push(...this.onToolResult(block.tool_use_id, block.is_error === true));
+        events.push(...this.onToolResult(block.tool_use_id, block.is_error === true, block.content));
       }
     }
     return events;
@@ -119,10 +132,15 @@ export class ClaudeProgressTranslator {
     return events;
   }
 
-  private onToolResult(id: string, isError: boolean): ProviderEvent[] {
+  private onToolResult(id: string, isError: boolean, content?: unknown): ProviderEvent[] {
     const step = this.open.get(id);
     if (!step) return [];
     this.open.delete(id);
+    // The model called a tool that doesn't exist: nothing was done, so it
+    // isn't a step (and isn't a failure worth showing).
+    if (isError && NO_SUCH_TOOL.test(resultText(content))) {
+      return [progress(`${step.title} (no such tool)`, { kind: 'dropStep', id })];
+    }
     const state = isError ? 'failed' : 'done';
     return [
       progress(`${step.title} (${state})`, {

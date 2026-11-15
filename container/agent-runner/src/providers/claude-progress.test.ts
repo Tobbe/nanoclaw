@@ -6,11 +6,11 @@ import type { ProviderEvent } from './types.js';
 function assistant(...content: unknown[]) {
   return { type: 'assistant', parent_tool_use_id: null, message: { content } };
 }
-function toolResult(id: string, isError = false) {
+function toolResult(id: string, isError = false, content?: unknown) {
   return {
     type: 'user',
     parent_tool_use_id: null,
-    message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError }] },
+    message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content }] },
   };
 }
 function details(events: ProviderEvent[]) {
@@ -40,6 +40,17 @@ describe('ClaudeProgressTranslator', () => {
     t.translate(assistant({ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'pnpm test' } }));
     const [event] = t.translate(toolResult('b1', true));
     expect(event.type === 'progress' && event.detail).toMatchObject({ id: 'b1', state: 'failed', title: 'Ran tests' });
+  });
+
+  it('drops a call to a tool that does not exist', () => {
+    const t = new ClaudeProgressTranslator();
+    t.translate(assistant({ type: 'tool_use', id: 'x1', name: 'send_message_placeholder', input: {} }));
+    const error = '<tool_use_error>Error: No such tool available: send_message_placeholder</tool_use_error>';
+    expect(details(t.translate(toolResult('x1', true, error)))).toEqual([{ kind: 'dropStep', id: 'x1' }]);
+    t.translate(assistant({ type: 'tool_use', id: 'x2', name: 'nope', input: {} }));
+    expect(details(t.translate(toolResult('x2', true, [{ type: 'text', text: error }])))).toEqual([
+      { kind: 'dropStep', id: 'x2' },
+    ]);
   });
 
   it('turns TodoWrite into a plan, using activeForm for the running item', () => {

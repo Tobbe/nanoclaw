@@ -22,6 +22,15 @@ describe('RunProgressTracker', () => {
     expect(s.updatedAt).toBe(T1);
   });
 
+  it('drops a step that turned out not to be work', () => {
+    const t = new RunProgressTracker('run-1', T0);
+    t.apply(step('a', 'done'), T0);
+    t.apply(step('b', 'running'), T0);
+    expect(t.apply({ kind: 'dropStep', id: 'b' }, T1).changed).toBe(true);
+    expect(t.apply({ kind: 'dropStep', id: 'b' }, T1).changed).toBe(false);
+    expect(t.snapshot().steps.map((x) => x.id)).toEqual(['a']);
+  });
+
   it('reports no change for a repeated event', () => {
     const t = new RunProgressTracker('run-1', T0);
     expect(t.apply(step('a', 'running'), T0).changed).toBe(true);

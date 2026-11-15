@@ -12,7 +12,7 @@ import type {
   TerminalStatus,
 } from './types.js';
 
-export const DEFAULT_MAX_STEPS = 8;
+export const DEFAULT_MAX_STEPS = 10;
 
 export interface ApplyResult {
   /** The snapshot would render differently. */
@@ -112,6 +112,12 @@ export class RunProgressTracker {
           this.waiting = null;
           return { changed: true, urgent: true };
         }
+        return { changed: true, urgent: false };
+      }
+      case 'dropStep': {
+        const i = this.steps.findIndex((s) => s.id === detail.id);
+        if (i < 0) return { changed: false, urgent: false };
+        this.steps.splice(i, 1);
         return { changed: true, urgent: false };
       }
       case 'plan': {

@@ -20,7 +20,7 @@ import { escapeInvisibles } from '../../card-text.js';
 import type { RunProgressSnapshot } from './snapshot.js';
 
 /** Steps shown while live, and on a failed card. */
-const MAX_STEPS_SHOWN = 4;
+const MAX_STEPS_SHOWN = 10;
 /** Plan items shown before the rest are folded into "+N more". */
 const MAX_PLAN_SHOWN = 8;
 

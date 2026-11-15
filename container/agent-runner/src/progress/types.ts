@@ -24,6 +24,8 @@ export interface PlanItem {
 export type ProgressDetail =
   /** One tool call (or equivalent unit of work). `id` pairs start and finish. */
   | { kind: 'step'; id: string; title: string; state: StepState; category: StepCategory; tool?: string }
+  /** Take a step back off the card: it turned out not to be work (a call to a tool that doesn't exist). */
+  | { kind: 'dropStep'; id: string }
   /** The agent's own checklist, replaced wholesale on every update. */
   | { kind: 'plan'; items: PlanItem[] }
   /** The run is blocked on a person. `id` pairs it with the step that resolves it. */

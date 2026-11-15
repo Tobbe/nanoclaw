@@ -89,12 +89,13 @@ describe('renderRunCard', () => {
   });
 
   it('shows the last few steps when there is no plan, counting earlier ones', () => {
-    const steps = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => step(id, `Step ${id}`));
-    steps[5] = step('f', 'Step f', 'running');
-    expect(lines(snap({ steps, earlierSteps: 2 }))).toEqual([
-      '⏳ *Working on it* · 10s',
-      '+ 4 earlier steps\n✓ Step c\n✓ Step d\n✓ Step e\n◉ Step f',
-    ]);
+    const ids = 'abcdefghijkl'.split('');
+    const steps = ids.map((id) => step(id, `Step ${id}`));
+    steps[11] = step('l', 'Step l', 'running');
+    const [, body] = lines(snap({ steps, earlierSteps: 2 }));
+    const shown = body.split('\n');
+    expect(shown[0]).toBe('+ 4 earlier steps');
+    expect(shown.slice(1)).toEqual([...ids.slice(2, 11).map((id) => `✓ Step ${id}`), '◉ Step l']);
   });
 
   it('hides a retried failure while live', () => {
