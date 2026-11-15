@@ -112,8 +112,13 @@ export class RunCardManager {
     return this.cards.size;
   }
 
-  /** Feed the latest snapshot for a run. Cheap and synchronous: no platform calls. */
-  accept(sessionId: string, snapshot: RunProgressSnapshot, target: CardTarget): void {
+  /**
+   * Feed the latest snapshot for a run. Cheap and synchronous: no platform calls.
+   * `askedAt` is when the message that started the run arrived: the post
+   * delay counts from then, not from the agent's first step, so a slow start
+   * (container spawn, a long think) doesn't add to the wait.
+   */
+  accept(sessionId: string, snapshot: RunProgressSnapshot, target: CardTarget, askedAt?: number): void {
     const key = `${sessionId}:${snapshot.runId}`;
     if (this.finished.has(key)) return;
     const existing = this.cards.get(key);
@@ -135,7 +140,7 @@ export class RunCardManager {
       sessionId,
       target,
       snapshot,
-      firstSeenAt: now,
+      firstSeenAt: askedAt !== undefined && askedAt <= now ? askedAt : now,
       createdAtIso: new Date(now).toISOString(),
       inFlight: false,
       lastEditAt: 0,

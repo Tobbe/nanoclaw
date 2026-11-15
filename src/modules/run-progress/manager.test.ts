@@ -123,6 +123,22 @@ describe('RunCardManager', () => {
     });
   });
 
+  it('counts the 8s from when the message arrived, not from the first step', async () => {
+    const h = harness();
+    // The container took 13s to report its first step.
+    h.manager.accept('sess', snap(1), TARGET, T0 - 13_000);
+    await h.run(1000);
+    expect(h.calls.map((c) => c.op)).toEqual(['post']);
+
+    // A message that arrived only 3s ago still waits out the rest.
+    const later = harness();
+    later.manager.accept('sess', snap(1), TARGET, T0 - 3000);
+    await later.run(4000);
+    expect(later.calls).toEqual([]);
+    await later.run(1000);
+    expect(later.calls.map((c) => c.op)).toEqual(['post']);
+  });
+
   it('posts at once when the run starts waiting on a person', async () => {
     const h = harness();
     h.manager.accept('sess', snap(1, { status: 'waiting', waiting: { on: 'question', summary: 'Which?' } }), TARGET);

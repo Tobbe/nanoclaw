@@ -108,7 +108,21 @@ export const receipts = new Receipts({
   log,
 });
 
+/** When each session last got a message that woke its agent (for the card's post delay). */
+const askedAt = new Map<string, number>();
+const ASKED_AT_MAX_AGE_MS = 2 * 60 * 1000;
+const MAX_ASKED_AT = 500;
+
+/** When the message behind a run arrived, if it was recent enough to be the trigger. */
+function recentAskedAt(sessionId: string): number | undefined {
+  const at = askedAt.get(sessionId);
+  return at !== undefined && Date.now() - at <= ASKED_AT_MAX_AGE_MS ? at : undefined;
+}
+
 registerMessageEngagedHook((event) => {
+  askedAt.delete(event.session.id);
+  askedAt.set(event.session.id, Date.now());
+  if (askedAt.size > MAX_ASKED_AT) askedAt.delete(askedAt.keys().next().value!);
   if (!wantsReceipt(event)) return;
   receipts.received(
     event.session.id,
@@ -172,7 +186,7 @@ export async function handleRunProgress(content: Record<string, unknown>, sessio
   }
   // Hand off and return: the card is updated from the manager's own tick,
   // never from the delivery path.
-  runCards.accept(session.id, snapshot, target);
+  runCards.accept(session.id, snapshot, target, recentAskedAt(session.id));
 }
 
 registerDeliveryAction(
