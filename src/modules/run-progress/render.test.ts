@@ -98,6 +98,33 @@ describe('renderRunCard', () => {
     expect(shown.slice(1)).toEqual([...ids.slice(2, 11).map((id) => `✓ Step ${id}`), '◉ Step l']);
   });
 
+  it('merges repeated steps in a row into one line', () => {
+    const steps = [
+      step('a', 'Pulled the latest changes'),
+      step('b', 'Pulled the latest changes'),
+      step('c', 'Read a file'),
+      step('d', 'Read a file'),
+      step('e', 'Read a file', 'running'),
+      step('f', 'Ran a build', 'failed'),
+      step('g', 'Ran a build', 'failed'),
+    ];
+    const [, body] = lines(snap({ steps, status: 'failed' }));
+    expect(body.split('\n')).toEqual([
+      '✓ Pulled the latest changes ×2',
+      '◉ Read a file ×3',
+      '✗ Ran a build',
+      '✗ Ran a build',
+    ]);
+  });
+
+  it('counts merged steps it folds away as earlier steps', () => {
+    const titles = ['A', 'A', 'A', ...'BCDEFGHIJK'.split('')];
+    const steps = titles.map((t, i) => step(`s${i}`, `Step ${t}`));
+    const [, body] = lines(snap({ steps }));
+    expect(body.split('\n')[0]).toBe('+ 3 earlier steps');
+    expect(body.split('\n')).toHaveLength(11);
+  });
+
   it('hides a retried failure while live', () => {
     const steps = [step('a', 'Cloned a repository', 'failed'), step('b', 'Cloned a repository')];
     expect(lines(snap({ steps }))[1]).toBe('✓ Cloned a repository');

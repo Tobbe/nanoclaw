@@ -46,6 +46,12 @@ describe('summarizeStep', () => {
     expect(title('test -d site || git clone https://github.com/acme/site.git')).toBe('Cloned a repository');
     expect(title('git add -A && git commit -m "x"')).toBe('Committed changes');
     expect(title('git rev-parse HEAD')).toBe('Used git');
+    expect(title('git branch -a')).toBe('Looked at the branches and files');
+    expect(title('git checkout -b codebot/x origin/main')).toBe('Switched branches');
+    expect(title('cat AGENTS.md; git status --short; git branch -a; git log --oneline')).toBe('Checked what changed');
+    // The first command decides, not the order the labels are checked in.
+    expect(title('grep -rn kloak src | grep -v x; head -20 src/a.yaml')).toBe('Searched the code');
+    expect(title('cd repos && ls; cat notes.md')).toBe('Looked through the files');
     expect(title('cat README.md | head -50')).toBe('Read a file');
     expect(title('mkdir -p out && cp a b')).toBe('Organised files');
     expect(title('python3 scripts/build_index.py')).toBe('Ran a script');

@@ -42,16 +42,21 @@ const GIT_LABELS: Array<[RegExp, string]> = [
   [git('commit'), 'Committed changes'],
   [git('push'), 'Pushed changes'],
   [git('pull|fetch'), 'Pulled the latest changes'],
-  [git('checkout|switch|branch'), 'Switched branches'],
+  [git('checkout|switch'), 'Switched branches'],
   [git('diff|status'), 'Checked what changed'],
   [git('log|show|blame'), 'Looked at the history'],
+  // Listing (`git branch -a`), not switching; agents create branches with checkout/switch.
+  [git('branch|ls-tree|ls-files'), 'Looked at the branches and files'],
   [git('add|rm|mv|restore|stash|reset'), 'Staged changes'],
   [git('config|init|remote'), 'Set up git'],
   [/\bgh\s+pr\b/, 'Worked on a pull request'],
   [/\bgh\s+issue\b/, 'Looked at issues'],
 ];
 
-/** Everyday shell commands → a fixed label, matched on the first command of the line. */
+/**
+ * Everyday shell commands → a fixed label. The command that comes first in
+ * the line wins: `grep … ; head …` is a search, not a read.
+ */
 const SHELL_LABELS: Array<[RegExp, StepSummary]> = [
   [new RegExp(`${SEG}(ls|tree|find|fd)\\b`), { title: 'Looked through the files', category: 'inspect' }],
   [new RegExp(`${SEG}(cat|head|tail|less|wc|sed\\s+-n)\\b`), { title: 'Read a file', category: 'inspect' }],
@@ -102,8 +107,12 @@ export function classifyCommand(command: string): StepSummary {
     }
     return { title: 'Used git', category: 'run' };
   }
-  for (const [pattern, summary] of SHELL_LABELS) if (pattern.test(command)) return { ...summary };
-  return { title: 'Ran a command', category: 'run' };
+  let first: { at: number; summary: StepSummary } | undefined;
+  for (const [pattern, summary] of SHELL_LABELS) {
+    const at = pattern.exec(command)?.index;
+    if (at !== undefined && (!first || at < first.at)) first = { at, summary };
+  }
+  return first ? { ...first.summary } : { title: 'Ran a command', category: 'run' };
 }
 
 /**

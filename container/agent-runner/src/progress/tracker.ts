@@ -12,7 +12,8 @@ import type {
   TerminalStatus,
 } from './types.js';
 
-export const DEFAULT_MAX_STEPS = 10;
+/** More than the card shows (10 lines), so lines merged from repeated steps still fill it. */
+export const DEFAULT_MAX_STEPS = 30;
 
 export interface ApplyResult {
   /** The snapshot would render differently. */

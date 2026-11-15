@@ -87,10 +87,36 @@ function muted(content: string): MutedText {
   return { type: 'Text', props: { content, style: 'muted' } };
 }
 
+interface StepGroup {
+  title: string;
+  state: Step['state'];
+  count: number;
+}
+
+/**
+ * Steps in a row with the same title share one line ("✓ Read a file ×2"):
+ * labels are coarse, so separate calls often read the same. A failure keeps
+ * its own line, and the group shows the state of its newest step.
+ */
+export function groupSteps(steps: Step[]): StepGroup[] {
+  const groups: StepGroup[] = [];
+  for (const step of steps) {
+    const last = groups.at(-1);
+    if (last && last.title === step.title && last.state === 'done' && step.state !== 'failed') {
+      last.count += 1;
+      last.state = step.state;
+    } else {
+      groups.push({ title: step.title, state: step.state, count: 1 });
+    }
+  }
+  return groups;
+}
+
 function stepLines(steps: Step[], earlier: number): string {
-  const shown = steps.slice(-MAX_STEPS_SHOWN);
-  const hidden = earlier + (steps.length - shown.length);
-  const lines = shown.map((step) => `${STEP_MARK[step.state]} ${safeText(step.title)}`);
+  const groups = groupSteps(steps);
+  const shown = groups.slice(-MAX_STEPS_SHOWN);
+  const hidden = earlier + groups.slice(0, groups.length - shown.length).reduce((n, g) => n + g.count, 0);
+  const lines = shown.map((g) => `${STEP_MARK[g.state]} ${safeText(g.title)}${g.count > 1 ? ` ×${g.count}` : ''}`);
   if (hidden > 0) lines.unshift(`+ ${plural(hidden, 'earlier step')}`);
   return lines.join('\n');
 }
