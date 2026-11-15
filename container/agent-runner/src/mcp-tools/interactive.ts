@@ -158,6 +158,8 @@ export const MAX_CARD_QUESTION_LENGTH = 2000;
 export const askUserQuestion: McpToolDefinition = {
   tool: {
     name: 'ask_user_question',
+    // Like send_message: how the agent reaches people mid-task, so always loaded.
+    _meta: { 'anthropic/alwaysLoad': true },
     description:
       'Ask the user a multiple-choice question and wait for their response. This is a blocking call — execution pauses until the user responds or the timeout expires. Provide a short card title (e.g. "Confirm deletion") and an array of options — each option may be a plain string (used as both button label and result value) or an object { label, selectedLabel?, value? } where selectedLabel is the text shown on the card after the user clicks.',
     inputSchema: {

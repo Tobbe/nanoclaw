@@ -67,6 +67,10 @@ export const sendMessage: McpToolDefinition = {
   tool: {
     name: 'send_message',
     description: 'Send a message to a named destination.',
+    // How the agent talks to people mid-task: never deferred behind tool
+    // search, so it never has to guess the name (it once called a made-up
+    // `send_message_placeholder` instead of loading this).
+    _meta: { 'anthropic/alwaysLoad': true },
     inputSchema: {
       type: 'object' as const,
       properties: {
