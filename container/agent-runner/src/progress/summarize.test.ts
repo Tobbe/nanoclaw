@@ -38,6 +38,13 @@ describe('summarizeStep', () => {
     expect(title('git commit -m "secret message"')).toBe('Committed changes');
     expect(title('git push origin main')).toBe('Pushed changes');
     expect(title('gh pr create --fill')).toBe('Worked on a pull request');
+    expect(title('git config user.name CodeBot')).toBe('Set up git');
+    // A fallback after || only runs when the first part fails.
+    expect(
+      title('cd repos && (test -d site && cd site && git fetch -q origin && git reset -q --hard origin/main || git clone -q https://github.com/acme/site.git)'),
+    ).toBe('Pulled the latest changes');
+    expect(title('test -d site || git clone https://github.com/acme/site.git')).toBe('Cloned a repository');
+    expect(title('git add -A && git commit -m "x"')).toBe('Committed changes');
     expect(title('git rev-parse HEAD')).toBe('Used git');
     expect(title('cat README.md | head -50')).toBe('Read a file');
     expect(title('mkdir -p out && cp a b')).toBe('Organised files');

@@ -46,6 +46,7 @@ const GIT_LABELS: Array<[RegExp, string]> = [
   [git('diff|status'), 'Checked what changed'],
   [git('log|show|blame'), 'Looked at the history'],
   [git('add|rm|mv|restore|stash|reset'), 'Staged changes'],
+  [git('config|init|remote'), 'Set up git'],
   [/\bgh\s+pr\b/, 'Worked on a pull request'],
   [/\bgh\s+issue\b/, 'Looked at issues'],
 ];
@@ -93,7 +94,12 @@ export function classifyCommand(command: string): StepSummary {
   if (BUILD_COMMAND.test(command)) return { title: 'Ran a build', category: 'run' };
   if (INSTALL_COMMAND.test(command)) return { title: 'Installed dependencies', category: 'run' };
   if (GIT_COMMAND.test(command)) {
-    for (const [pattern, title] of GIT_LABELS) if (pattern.test(command)) return { title, category: 'run' };
+    // `a || b` runs b only when a fails, so label what normally runs: "fetch
+    // the clone, or clone it if missing" is a fetch, not a clone.
+    const usual = command.split('||')[0];
+    for (const part of [usual, command]) {
+      for (const [pattern, title] of GIT_LABELS) if (pattern.test(part)) return { title, category: 'run' };
+    }
     return { title: 'Used git', category: 'run' };
   }
   for (const [pattern, summary] of SHELL_LABELS) if (pattern.test(command)) return { ...summary };
