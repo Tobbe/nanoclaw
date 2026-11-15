@@ -17,7 +17,7 @@
 # never require an image rebuild.
 
 # Pinned by digest so a rebuild cannot reuse a cached older base; bump tag and digest together.
-FROM node:22.23.5-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
+FROM node:24.22.3-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 
 # ---- Build-time arguments ----------------------------------------------------
 # CJK fonts add ~200MB. Opt in only if you render Chinese/Japanese/Korean text.
@@ -82,6 +82,28 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" && \
     rm -rf /root/.bun && \
     test "$(bun --version)" = "${BUN_VERSION}"
 
+# ---- GitHub CLI --------------------------------------------------------------
+# From GitHub's release, not Debian's package (stuck years behind: 2.23 lacks
+# flags like `gh run list --commit`). Checksums are from the release's
+# gh_<version>_checksums.txt; bump the version and both sums together.
+ARG GH_VERSION=2.104.0
+ARG GH_SHA256_AMD64=98cb101ad87dbbd3f6b2f2bfcbd43197ccd07643140121d8a9cfaa91eadbc24e
+ARG GH_SHA256_ARM64=cb34cefc6f4e77b90731374a2b737516bb8f3033c6ca46aa949e5344f68069e3
+ARG TARGETARCH
+RUN set -eu; \
+    case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+        amd64) sum="$GH_SHA256_AMD64"; arch=amd64 ;; \
+        arm64) sum="$GH_SHA256_ARM64"; arch=arm64 ;; \
+        *) echo "no gh build for this architecture" >&2; exit 1 ;; \
+    esac; \
+    tarball="gh_${GH_VERSION}_linux_${arch}.tar.gz"; \
+    curl -fsSLo "/tmp/$tarball" "https://github.com/cli/cli/releases/download/v${GH_VERSION}/$tarball"; \
+    echo "$sum  /tmp/$tarball" | sha256sum -c -; \
+    tar -xzf "/tmp/$tarball" -C /tmp; \
+    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh; \
+    rm -rf /tmp/gh_*; \
+    gh --version | grep -q "gh version ${GH_VERSION} "
+
 # ---- agent-runner deps -------------------------------------------------------
 # Deps are cached independently of CLI versions. Source is NOT baked in —
 # it's provided by the shared RO mount at runtime.
@@ -111,7 +133,7 @@ ENV PATH="$PNPM_HOME:$PATH"
 ARG PNPM_VERSION=10.34.9
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 
-# The npm in node:22-slim (10.x) bundles libraries that lag their security
+# The npm in node:24-slim (11.19.x) bundles libraries that lag their security
 # releases; npm 11.21.2 bundles the patched ones. Drop this pin once the
 # base image's npm has caught up.
 ARG NPM_VERSION=11.21.2
