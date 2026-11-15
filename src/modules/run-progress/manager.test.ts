@@ -161,21 +161,21 @@ describe('RunCardManager', () => {
     expect(edits).toHaveLength(1);
     expect(edits[0].messageId).toBe('ts-1');
     // Seq 2 and 3 coalesced into one edit; nothing new to show until the refresh.
-    await h.run(5000);
+    await h.run(4000);
     expect(h.calls.filter((c) => c.op === 'edit')).toHaveLength(1);
   });
 
-  it('refreshes the elapsed time every 15s through a long step', async () => {
+  it('refreshes the elapsed time every 5s through a long step', async () => {
     const h = harness();
     h.manager.accept('sess', snap(1), TARGET);
     await h.run(8000);
-    await h.run(45_000);
+    await h.run(15_000);
     const edits = h.calls.filter((c) => c.op === 'edit');
-    expect(edits.map((e) => (e.at - T0) / 1000)).toEqual([23, 38, 53]);
+    expect(edits.map((e) => (e.at - T0) / 1000)).toEqual([13, 18, 23]);
     expect(edits.map((e) => e.title)).toEqual([
+      '⏳ Working on it · 13s',
+      '⏳ Working on it · 18s',
       '⏳ Working on it · 23s',
-      '⏳ Working on it · 38s',
-      '⏳ Working on it · 53s',
     ]);
   });
 

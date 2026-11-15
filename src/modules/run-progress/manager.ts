@@ -51,7 +51,9 @@ export interface RunCardConfig {
 export const DEFAULT_RUN_CARD_CONFIG: RunCardConfig = {
   postAfterMs: 8_000,
   minEditGapMs: 3_000,
-  refreshMs: 15_000,
+  // Often enough that a long step (a build) never looks stuck: 12 edits a
+  // minute per live card, well inside Slack's ~50/min for chat.update.
+  refreshMs: 5_000,
   editTimeoutMs: 15_000,
   backoffMs: 30_000,
   staleAfterMs: 30_000,
