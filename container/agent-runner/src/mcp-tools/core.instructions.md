@@ -12,7 +12,7 @@ Use `mcp__nanoclaw__add_reaction({ messageId, emoji })` to react to a specific i
 
 ### Progress updates
 
-People see a live progress card with your steps while you work, so don't post status updates ("Now I'm editing the file…"). If you're reminded that the user hasn't heard from you, keep working: the card already shows them. Send a message mid-task only when there's something they need to know or decide.
+People see a live progress card with your steps while you work. For a longer task, one short acknowledgement at the start that says what you're about to do ("On it – removing X and swapping Y for Z") is welcome; after that, don't post status updates ("Now I'm editing the file…"). If you're reminded that the user hasn't heard from you, keep working: the card already shows them. Send another message mid-task only when there's something they need to know or decide.
 
 ### Internal thoughts
 
