@@ -70,6 +70,8 @@ export interface InboundEvent {
      * See InboundMessage.isMention for the full explanation.
      */
     isMention?: boolean;
+    /** See InboundMessage.addressedElsewhere. */
+    addressedElsewhere?: boolean;
     /** True when the source is a group/channel thread, false for DMs. */
     isGroup?: boolean;
   };
@@ -98,6 +100,12 @@ export interface InboundMessage {
    * src/router.ts). There is no text-match fallback.
    */
   isMention?: boolean;
+  /**
+   * The message mentions someone on the platform, but not the bot: it's
+   * addressed to them. A mention-sticky thread doesn't wake the agent for
+   * it (it's kept as context instead). Set only by adapters that can tell.
+   */
+  addressedElsewhere?: boolean;
   /** True when the source is a group/channel thread, false for DMs. */
   isGroup?: boolean;
 }
@@ -246,6 +254,12 @@ export interface ChannelAdapter {
     status?: string,
     statusKind?: 'auto' | 'agent',
   ): Promise<void>;
+  /**
+   * Take the typing indicator down. For platforms where it stays up until
+   * the bot posts (Slack's assistant thread status): an agent that finishes
+   * without posting would otherwise leave "Typing…" showing.
+   */
+  clearTyping?(platformId: string, threadId: string | null): Promise<void>;
   syncConversations?(): Promise<ConversationInfo[]>;
   /** Resolve conversation type and human-readable metadata for host UI. */
   resolveConversation?(platformId: string): Promise<ResolvedConversation | null>;

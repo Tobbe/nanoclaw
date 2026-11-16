@@ -176,6 +176,7 @@ export interface ChannelDeliveryAdapter {
     status?: string,
     statusKind?: 'auto' | 'agent',
   ): Promise<void>;
+  clearTyping?(channelType: string, platformId: string, threadId: string | null, instance?: string): Promise<void>;
 }
 
 let deliveryAdapter: ChannelDeliveryAdapter | null = null;

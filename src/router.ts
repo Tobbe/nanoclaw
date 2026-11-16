@@ -438,7 +438,14 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
     );
     const effectiveThreadId = threadsEnabled ? event.threadId : null;
 
-    const engages = await evaluateEngage(agent, messageText, isMention, mg, effectiveThreadId);
+    const engages = await evaluateEngage(
+      agent,
+      messageText,
+      isMention,
+      mg,
+      effectiveThreadId,
+      event.message.addressedElsewhere === true,
+    );
 
     const accessOk = engages && (!accessGate || (await accessGate(event, userId, mg, agent.agent_group_id)).allowed);
     const scopeOk = engages && (!senderScopeGate || (await senderScopeGate(event, userId, mg, agent)).allowed);
@@ -519,7 +526,9 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
  *   'mention-sticky' — platform mention OR this agent was already woken
  *                      in an active per-thread session for (agent, mg,
  *                      thread). A session that holds only accumulated
- *                      chatter does not count.
+ *                      chatter does not count. A message that mentions
+ *                      someone else and not the bot is addressed to them,
+ *                      so it doesn't count either.
  */
 async function evaluateEngage(
   agent: MessagingGroupAgent,
@@ -527,6 +536,7 @@ async function evaluateEngage(
   isMention: boolean,
   mg: MessagingGroup,
   threadId: string | null,
+  addressedElsewhere = false,
 ): Promise<boolean> {
   switch (agent.engage_mode) {
     case 'pattern': {
@@ -543,6 +553,7 @@ async function evaluateEngage(
       return isMention;
     case 'mention-sticky': {
       if (isMention) return true;
+      if (addressedElsewhere) return false; // "@Lise …" in a thread the agent follows
       if (mg.is_group === 0) return false; // DMs never use mention-sticky sensibly
       const existing = await findSessionForAgent(agent.agent_group_id, mg.id, threadId);
       if (!existing) return false;

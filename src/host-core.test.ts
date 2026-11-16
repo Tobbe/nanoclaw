@@ -1080,6 +1080,38 @@ describe('router — per-wiring thread policy', () => {
     });
   });
 
+  it('mention-sticky does not wake for a follow-up addressed to someone else', async () => {
+    // Live-hit: "@Lise start a new thread…" in a thread the agent follows got
+    // a reply from the agent.
+    await getDb().run(
+      "UPDATE messaging_group_agents SET engage_mode = 'mention-sticky', ignored_message_policy = 'accumulate' WHERE id = 'mga-tp'",
+    );
+
+    await withThreadedAdapter(async () => {
+      const { routeInbound } = await import('./router.js');
+      const { wakeContainer } = await import('./container-runner.js');
+      const wake = wakeContainer as unknown as ReturnType<typeof vi.fn>;
+      wake.mockClear();
+
+      const mention = threadedEvent('msg-mention');
+      await routeInbound({ ...mention, message: { ...mention.message, isMention: true } });
+      const toLise = threadedEvent('msg-to-lise');
+      await routeInbound({ ...toLise, message: { ...toLise.message, addressedElsewhere: true } });
+      await routeInbound(threadedEvent('msg-followup'));
+
+      expect(wake).toHaveBeenCalledTimes(2);
+      const session = await findSession('mg-tp', 'thread-42');
+      const db = new Database(inboundDbPath('ag-tp', session!.id));
+      // Kept as context, not a trigger.
+      expect(db.prepare('SELECT id, trigger FROM messages_in ORDER BY seq').all()).toEqual([
+        { id: expect.stringContaining('msg-mention'), trigger: 1 },
+        { id: expect.stringContaining('msg-to-lise'), trigger: 0 },
+        { id: expect.stringContaining('msg-followup'), trigger: 1 },
+      ]);
+      db.close();
+    });
+  });
+
   it('mention-sticky engages a follow-up sent while the first wake is still starting', async () => {
     await getDb().run("UPDATE messaging_group_agents SET engage_mode = 'mention-sticky' WHERE id = 'mga-tp'");
 

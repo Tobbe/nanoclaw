@@ -120,6 +120,7 @@ async function main(): Promise<void> {
                 content: JSON.stringify(message.content),
                 timestamp: message.timestamp,
                 isMention: message.isMention,
+                addressedElsewhere: message.addressedElsewhere,
                 isGroup: message.isGroup,
               },
             }),

@@ -46,6 +46,7 @@ const POST_DELIVERY_PAUSE_MS = 10000;
 
 interface TypingAdapter {
   setTyping?(channelType: string, platformId: string, threadId: string | null, instance?: string): Promise<void>;
+  clearTyping?(channelType: string, platformId: string, threadId: string | null, instance?: string): Promise<void>;
 }
 
 interface TypingTarget {
@@ -58,6 +59,9 @@ interface TypingTarget {
   interval: NodeJS.Timeout;
   startedAt: number;
   pausedUntil: number; // epoch ms; 0 = not paused
+  /** Epoch ms of the last setTyping and of the last delivered message. */
+  typedAt: number;
+  deliveredAt: number;
 }
 
 let adapter: TypingAdapter | null = null;
@@ -85,6 +89,17 @@ async function triggerTyping(
   } catch {
     // Typing is best-effort — don't let it fail delivery or routing.
   }
+}
+
+/**
+ * On stop: if the indicator went up after the last delivered message, take
+ * it down. Slack keeps "Typing…" until the bot posts, so an agent that
+ * finishes without a reply (it decided the message wasn't for it) would
+ * leave it showing for minutes.
+ */
+function clearIfShowing(entry: TypingTarget): void {
+  if (entry.typedAt <= entry.deliveredAt) return;
+  adapter?.clearTyping?.(entry.channelType, entry.platformId, entry.threadId, entry.instance).catch(() => {});
 }
 
 function isHeartbeatFresh(agentGroupId: string, sessionId: string): boolean {
@@ -115,6 +130,7 @@ export function startTypingRefresh(
     triggerTyping(channelType, platformId, threadId, instance).catch(() => {});
     existing.startedAt = Date.now();
     existing.pausedUntil = 0;
+    existing.typedAt = Date.now();
     // Keep the stored entry self-consistent: a re-trigger can arrive from
     // a different chat address (agent-shared sessions span messaging
     // groups, possibly on different platforms/instances), so the address
@@ -143,12 +159,14 @@ export function startTypingRefresh(
     const withinGrace = Date.now() - entry.startedAt < TYPING_GRACE_MS;
     if (withinGrace || isHeartbeatFresh(entry.agentGroupId, sessionId)) {
       triggerTyping(entry.channelType, entry.platformId, entry.threadId, entry.instance).catch(() => {});
+      entry.typedAt = Date.now();
       return;
     }
 
     // Out of grace AND heartbeat stale — agent is idle, stop refreshing.
     clearInterval(entry.interval);
     typingRefreshers.delete(sessionId);
+    clearIfShowing(entry);
   }, TYPING_REFRESH_MS);
   // unref so a stale refresher can't hold the event loop alive.
   interval.unref();
@@ -161,6 +179,8 @@ export function startTypingRefresh(
     interval,
     startedAt,
     pausedUntil: 0,
+    typedAt: startedAt,
+    deliveredAt: 0,
   });
 }
 
@@ -174,6 +194,7 @@ export function pauseTypingRefreshAfterDelivery(sessionId: string): void {
   const entry = typingRefreshers.get(sessionId);
   if (!entry) return;
   entry.pausedUntil = Date.now() + POST_DELIVERY_PAUSE_MS;
+  entry.deliveredAt = Date.now();
 }
 
 export function stopTypingRefresh(sessionId: string): void {
@@ -181,4 +202,5 @@ export function stopTypingRefresh(sessionId: string): void {
   if (!entry) return;
   clearInterval(entry.interval);
   typingRefreshers.delete(sessionId);
+  clearIfShowing(entry);
 }

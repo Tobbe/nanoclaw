@@ -362,6 +362,14 @@ export interface ChatSdkBridgeConfig {
    */
   extractRawText?: RawTextExtractor;
   /**
+   * Whether the platform's raw message mentions any user. Called only for
+   * messages that don't mention the bot, so a true answer means the message
+   * is addressed to someone else (InboundMessage.addressedElsewhere).
+   */
+  mentionsUsers?: (raw: Record<string, unknown>) => boolean;
+  /** Take the platform's typing indicator down (ChannelAdapter.clearTyping). */
+  clearTyping?: (threadId: string) => Promise<void>;
+  /**
    * Whether this platform uses threads as the primary conversation unit.
    * See `ChannelAdapter.supportsThreads`. Declared by the calling channel
    * skill, not inferred, because some platforms (Discord) can be used either
@@ -756,6 +764,10 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       serialized.senderName = name;
     }
 
+    // Someone else was mentioned and the bot wasn't: addressed to them.
+    const addressedElsewhere =
+      !isMention && !!message.raw && config.mentionsUsers?.(message.raw as Record<string, unknown>) === true;
+
     // Drop raw to save DB space (can be very large)
     serialized.raw = undefined;
 
@@ -765,6 +777,7 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       content: serialized,
       timestamp: message.metadata.dateSent.toISOString(),
       isMention,
+      ...(addressedElsewhere ? { addressedElsewhere } : {}),
       isGroup,
     };
   }
@@ -1195,6 +1208,14 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       const tid = threadId ?? platformId;
       await adapter.startTyping(tid);
     },
+
+    ...(config.clearTyping
+      ? {
+          async clearTyping(platformId: string, threadId: string | null) {
+            await config.clearTyping!(threadId ?? platformId);
+          },
+        }
+      : {}),
 
     async teardown() {
       gatewayAbort?.abort();

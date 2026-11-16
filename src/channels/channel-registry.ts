@@ -124,6 +124,10 @@ export function createChannelDeliveryAdapter(): ChannelDeliveryAdapter {
       const adapter = getChannelAdapterExact(instance ?? channelType);
       await adapter?.setTyping?.(platformId, threadId, status, statusKind);
     },
+    async clearTyping(channelType: string, platformId: string, threadId: string | null, instance?: string) {
+      const adapter = getChannelAdapterExact(instance ?? channelType);
+      await adapter?.clearTyping?.(platformId, threadId);
+    },
   };
 }
 

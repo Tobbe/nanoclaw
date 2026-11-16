@@ -121,3 +121,46 @@ describe('startTypingRefresh — instance forwarding', () => {
     }
   });
 });
+
+describe('clearing the indicator', () => {
+  function clearingAdapter() {
+    const cleared: Call[] = [];
+    setTypingAdapter({
+      async setTyping() {},
+      async clearTyping(channelType, platformId, threadId, instance) {
+        cleared.push({ channelType, platformId, threadId, instance });
+      },
+    });
+    return cleared;
+  }
+
+  it('clears when the agent stops without having posted', async () => {
+    // Live-hit: the agent read "@Lise …", stayed silent, and Slack showed
+    // "Typing…" for minutes.
+    const cleared = clearingAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    await vi.advanceTimersByTimeAsync(0);
+    stopTypingRefresh('sess-1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cleared).toEqual([{ channelType: 'slack', platformId: 'slack:C1', threadId: 'T1', instance: 'slack' }]);
+  });
+
+  it('clears when the refresh ends on its own because the agent went idle', async () => {
+    const cleared = clearingAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    // No heartbeat file: once the 15 s grace is over, the next tick stops.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(cleared).toHaveLength(1);
+  });
+
+  it("doesn't clear when a message was delivered after the last typing tick", async () => {
+    const { pauseTypingRefreshAfterDelivery } = await import('./index.js');
+    const cleared = clearingAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    await vi.advanceTimersByTimeAsync(1_000);
+    pauseTypingRefreshAfterDelivery('sess-1');
+    stopTypingRefresh('sess-1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cleared).toEqual([]);
+  });
+});
