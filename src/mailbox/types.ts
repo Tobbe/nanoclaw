@@ -148,6 +148,8 @@ export interface OutboundMailbox {
   writeDirect(message: DirectOutboundMessage): Promise<void>;
   getOutboundHistory(limit: number): MailboxHistoryMessage[];
   getTopLevelOutbound(limit: number): MailboxTimelineMessage[];
+  /** True once this session has replied inside a platform thread (not at the top level). */
+  hasThreadReply(): boolean;
   /** True once this session has messaged another agent, which routes its replies back here. */
   hasMessagesToOtherAgents(selfAgentGroupId: string): boolean;
 }

@@ -295,7 +295,10 @@ function formatEchoMessage(msg: MessageInRow): string {
   // (per-thread groups).
   if (content.echo?.surface === 'dm-timeline' || content.echo?.surface === 'channel-timeline') {
     const tag = content.echo.surface === 'channel-timeline' ? 'channel-history' : 'dm-history';
-    return `<${tag} sender="${escapeXml(sender)}" time="${escapeXml(time)}">${escapeXml(content.text || '')}</${tag}>`;
+    // A thread opener you already replied to in its own thread: the reply
+    // isn't part of this timeline, so say it was handled.
+    const answered = content.answered === true ? ' answered="in its own thread"' : '';
+    return `<${tag} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${answered}>${escapeXml(content.text || '')}</${tag}>`;
   }
   return `<cross-session-context from="${escapeXml(label)}" sender="${escapeXml(sender)}" time="${escapeXml(time)}">${escapeXml(content.text || '')}</cross-session-context>`;
 }

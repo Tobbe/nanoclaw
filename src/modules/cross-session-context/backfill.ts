@@ -44,6 +44,12 @@ interface BackfillRow {
   text: string;
   /** Row authored by the agent itself — rendered as "you" in the prelude. */
   self: boolean;
+  /**
+   * A thread opener the agent already replied to inside that thread. The
+   * reply isn't top-level, so without this mark a new thread would see the
+   * request alone and take it as still open.
+   */
+  answered?: boolean;
 }
 
 function parseContent(raw: string): { text?: string; sender?: string; senderId?: string; echo?: unknown } {
@@ -60,6 +66,7 @@ function parseContent(raw: string): { text?: string; sender?: string; senderId?:
  *    triggering chat row IS the conversation opener), and
  *  - top-level agent posts (outbound with an empty/absent thread — e.g. the
  *    welcome message), which start conversations of their own.
+ * A root the agent already replied to in its thread is marked `answered`.
  * Thread replies stay in their threads; deep conversations contribute one
  * line here, not their whole tail. Throws on a broken mailbox — the caller
  * isolates per sibling.
@@ -73,6 +80,7 @@ async function collectSiblingTopLevel(
   const timeline = await withExistingMailboxSession(agentGroup.id, sessionId, (mailbox) => ({
     root: mailbox.getConversationRoot(),
     outbound: mailbox.getTopLevelOutbound(limit),
+    answered: mailbox.hasThreadReply(),
   }));
   if (!timeline) return rows;
 
@@ -90,6 +98,7 @@ async function collectSiblingTopLevel(
         senderId: c.senderId ?? '',
         text: c.text,
         self: false,
+        ...(timeline.answered ? { answered: true } : {}),
       });
     }
   }
@@ -201,6 +210,7 @@ export async function backfillSession(
             sender: row.sender,
             senderId: row.senderId,
             ...(row.self ? { self: true } : {}),
+            ...(row.answered ? { answered: true } : {}),
             echo: { surface, label },
           }),
           processAfter: null,

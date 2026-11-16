@@ -433,6 +433,14 @@ export function wrapSqliteOutbound(
           )
           .all(limit) as MailboxTimelineMessage[]
       ).map((row) => ({ ...row, timestamp: sqliteTimestamp(row.timestamp) })),
+    hasThreadReply: () =>
+      readable()
+        .prepare(
+          "SELECT 1 FROM messages_out WHERE kind NOT IN ('system','task_log') " +
+            "AND (channel_type IS NULL OR channel_type != 'agent') " +
+            "AND thread_id IS NOT NULL AND thread_id != '' AND thread_id NOT LIKE '%:' LIMIT 1",
+        )
+        .get() !== undefined,
     hasMessagesToOtherAgents: (selfAgentGroupId) =>
       readable()
         .prepare("SELECT 1 FROM messages_out WHERE channel_type = 'agent' AND platform_id != ? LIMIT 1")

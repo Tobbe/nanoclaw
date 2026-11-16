@@ -233,5 +233,20 @@ describe('SQLite mailbox canonical serialization', () => {
     expect(wrapSqliteOutbound(outboundDb).getTopLevelOutbound(10)).toEqual([
       { timestamp: '2026-01-01T00:00:04.000Z', content: '{"text":"top level"}' },
     ]);
+    expect(wrapSqliteOutbound(outboundDb).hasThreadReply()).toBe(true);
+  });
+
+  it('does not count progress cards or top-level posts as a thread reply', () => {
+    const outboundDb = new Database(':memory:');
+    databases.push(outboundDb);
+    outboundDb.exec(OUTBOUND_SCHEMA);
+    const insert = outboundDb.prepare(
+      `INSERT INTO messages_out (id, seq, timestamp, kind, channel_type, thread_id, content)
+       VALUES (?, ?, '2026-01-01T00:00:00.000Z', ?, 'slack', ?, '{}')`,
+    );
+    insert.run('card', 1, 'system', 'slack:C1:1.0');
+    insert.run('top', 3, 'chat', null);
+    insert.run('dm-top', 5, 'chat', 'slack:D1:');
+    expect(wrapSqliteOutbound(outboundDb).hasThreadReply()).toBe(false);
   });
 });

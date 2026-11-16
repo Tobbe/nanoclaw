@@ -13,7 +13,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Row = { timestamp: string; content: string };
-type Sibling = { root?: Row; outbound?: Row[] };
+type Sibling = { root?: Row; outbound?: Row[]; threadReply?: boolean };
 
 const written: Array<Record<string, unknown>> = [];
 /** Mailbox sessions opened, by session id, in order. */
@@ -50,6 +50,7 @@ vi.mock('../../session-manager.js', () => ({
         outboundSql.push(`getTopLevelOutbound:${sessionId}`);
         return sibling?.outbound ?? [];
       },
+      hasThreadReply: () => sibling?.threadReply ?? false,
       getInboundHistory: (limit: number) => targetHistory.slice(0, limit),
       insertMessage: async (msg: Record<string, unknown>) => {
         written.push({ sessionId, ...msg });
@@ -186,6 +187,33 @@ describe('backfillSession — new session', () => {
     expect((first.echo as Record<string, unknown>).label).toBe('this channel, just before this conversation');
     const second = JSON.parse(written[1]!.content as string) as Record<string, unknown>;
     expect(second.self).toBe(true);
+  });
+
+  it('marks a thread opener the agent already replied to in that thread as answered', async () => {
+    // Live-hit: "@bot introduce yourself" was answered in its own thread; a
+    // later thread saw only the request and answered it again.
+    siblings = {
+      'sess-room-t1': {
+        root: { timestamp: iso(NOW - 50 * 60_000), content: chat('introduce yourself') },
+        threadReply: true,
+      },
+      'sess-room-t2': {
+        root: { timestamp: iso(NOW - 40 * 60_000), content: chat('just chatting') },
+      },
+    };
+    recentSessions = [sess('sess-room-t1', 'mg-room', 'slack:C1:1'), sess('sess-room-t2', 'mg-room', 'slack:C1:2')];
+    topLevelSession = undefined;
+
+    await backfillSession(AG, { ...(NEW_SESSION as object), messaging_group_id: 'mg-room' } as never, ROOM_MG, {
+      created: true,
+      now: NOW,
+    });
+
+    const rows = written.map((w) => JSON.parse(w.content as string) as Record<string, unknown>);
+    expect(rows.map((r) => [r.text, r.answered])).toEqual([
+      ['introduce yourself', true],
+      ['just chatting', undefined],
+    ]);
   });
 
   it('ignores system-sender roots and caps at BACKFILL_LIMIT newest rows', async () => {

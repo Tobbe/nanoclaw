@@ -152,6 +152,24 @@ describe('formatter rendering', () => {
     expect(result).not.toContain('<message');
   });
 
+  it('marks a channel-history opener that was answered in its own thread', () => {
+    insertMessage(
+      'bf-ch-answered',
+      'chat',
+      {
+        text: '@bot introduce yourself',
+        sender: 'Tobbe',
+        senderId: 'slack:U1',
+        answered: true,
+        echo: { surface: 'channel-timeline', label: 'this channel, just before this conversation' },
+      },
+      { trigger: 0, channelType: 'session-echo' },
+    );
+
+    const result = formatMessages(getPendingMessages());
+    expect(result).toMatch(/<channel-history sender="Tobbe" time="[^"]*" answered="in its own thread">/);
+  });
+
   it('XML-escapes label, sender, and text', () => {
     insertEcho('e1', { text: '<b>&"hi"</b>', sender: 'A & B', label: 'DM with <Gavriel>' });
 
