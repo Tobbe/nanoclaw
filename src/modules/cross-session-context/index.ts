@@ -48,6 +48,7 @@ export {
   formatHistoryLines,
   HISTORY_DEFAULT_LIMIT,
   HISTORY_TEXT_MAX_CHARS,
+  sessionFile,
   sessionHistory,
   type HistoryRow,
 } from './history.js';

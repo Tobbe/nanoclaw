@@ -89,6 +89,12 @@ export const sendMessage: McpToolDefinition = {
           description:
             'With new_thread: a note to yourself for the new thread (what it is about, where it came from, any pull request it owns). You read it when someone replies there.',
         },
+        files: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'With new_thread: files to post with the opener so people see them there, e.g. the image the thread is about (paths absolute or relative to /workspace/agent/).',
+        },
         thread_reply: {
           type: 'string',
           description:
@@ -106,7 +112,13 @@ export const sendMessage: McpToolDefinition = {
     const threadReply = typeof args.thread_reply === 'string' ? args.thread_reply.trim() : '';
     if (!to) return err(`to is required. Options: ${destinationList()}`);
     if (!text) return err('text is required');
-    if ((handoff || threadReply) && !newThread) return err('handoff and thread_reply only apply with new_thread: true');
+    const filePaths = Array.isArray(args.files) ? (args.files as unknown[]).filter((f): f is string => typeof f === 'string') : [];
+    if ((handoff || threadReply || filePaths.length > 0) && !newThread) {
+      return err('handoff, thread_reply and files only apply with new_thread: true');
+    }
+    const resolvedFiles = filePaths.map((f) => (path.isAbsolute(f) ? f : path.resolve('/workspace/agent', f)));
+    const missing = filePaths.filter((_, i) => !fs.existsSync(resolvedFiles[i]));
+    if (missing.length > 0) return err(`File not found: ${missing.join(', ')}`);
 
     const routing = resolveRouting(to);
     if ('error' in routing) return err(routing.error);
@@ -115,6 +127,21 @@ export const sendMessage: McpToolDefinition = {
     }
 
     const id = generateId();
+    // Stage files like send_file does; the host attaches them to the opener.
+    const filenames: string[] = [];
+    if (resolvedFiles.length > 0) {
+      const outboxDir = path.join('/workspace/outbox', id);
+      fs.mkdirSync(outboxDir, { recursive: true });
+      for (const file of resolvedFiles) {
+        let name = path.basename(file);
+        for (let n = 2; filenames.includes(name); n++) {
+          const ext = path.extname(file);
+          name = `${path.basename(file, ext)}-${n}${ext}`;
+        }
+        fs.copyFileSync(file, path.join(outboxDir, name));
+        filenames.push(name);
+      }
+    }
     const seq = await writeMessageOut({
       id,
       // A new thread answers nothing: no reply quote, no thread.
@@ -125,7 +152,13 @@ export const sendMessage: McpToolDefinition = {
       thread_id: newThread ? null : routing.thread_id,
       content: JSON.stringify(
         newThread
-          ? { text, newThread: true, ...(threadReply ? { threadReply } : {}), ...(handoff ? { handoff } : {}) }
+          ? {
+              text,
+              newThread: true,
+              ...(filenames.length > 0 ? { files: filenames } : {}),
+              ...(threadReply ? { threadReply } : {}),
+              ...(handoff ? { handoff } : {}),
+            }
           : { text },
       ),
     });

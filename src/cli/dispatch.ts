@@ -110,13 +110,13 @@ export async function dispatch(
       }
       req = { ...req, args: { ...req.args, ...fill } };
 
-      // Fail-closed pre-handler check for sessions-get/-history: returns
+      // Fail-closed pre-handler check for sessions-get/-history/-file: returns
       // "not found" regardless of whether the UUID exists in another group,
       // preventing an existence oracle across group boundaries. (history
       // also self-scopes in its handler — this is defense-in-depth.)
       if (
         cmd.resource === 'sessions' &&
-        (req.command === 'sessions-get' || req.command === 'sessions-history') &&
+        (req.command === 'sessions-get' || req.command === 'sessions-history' || req.command === 'sessions-file') &&
         req.args.id
       ) {
         const s = await getSession(req.args.id as string);

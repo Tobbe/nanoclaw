@@ -11,10 +11,12 @@
  * an agent caller asking about another group's session gets the same
  * "session not found" as a nonexistent id (no cross-group existence oracle).
  */
+import { AnchoredDir } from '../../anchored-dir.js';
+import { isSafeAttachmentName } from '../../attachment-safety.js';
 import { TIMEZONE } from '../../config.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getSession } from '../../db/sessions.js';
-import { withExistingMailboxSession } from '../../session-manager.js';
+import { sessionDir, withExistingMailboxSession } from '../../session-manager.js';
 import { formatLocalStamp } from '../../timezone.js';
 import type { CallerContext } from '../../cli/frame.js';
 
@@ -29,6 +31,11 @@ export interface HistoryRow {
   kind: string;
   sender: string;
   text: string;
+  /**
+   * Files that arrived with the message, by their path in that session
+   * (`inbox/<folder>/<name>`). `ncl sessions file <id> <path>` fetches one.
+   */
+  attachments?: string[];
 }
 
 function cell(value: string): string {
@@ -37,7 +44,7 @@ function cell(value: string): string {
   return value.replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, HISTORY_TEXT_MAX_CHARS);
 }
 
-function parseText(raw: string): { text: string; sender: string | null } {
+function parseText(raw: string): { text: string; sender: string | null; attachments: string[] } {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const text =
@@ -46,9 +53,14 @@ function parseText(raw: string): { text: string; sender: string | null } {
         : typeof parsed.action === 'string'
           ? `[${parsed.action}]`
           : '';
-    return { text, sender: typeof parsed.sender === 'string' ? parsed.sender : null };
+    const attachments = Array.isArray(parsed.attachments)
+      ? (parsed.attachments as Array<Record<string, unknown>>)
+          .map((a) => a.localPath)
+          .filter((p): p is string => typeof p === 'string' && p.startsWith('inbox/'))
+      : [];
+    return { text, sender: typeof parsed.sender === 'string' ? parsed.sender : null, attachments };
   } catch {
-    return { text: raw, sender: null };
+    return { text: raw, sender: null, attachments: [] };
   }
 }
 
@@ -81,8 +93,15 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
 
   if (history) {
     for (const r of history.inbound) {
-      const { text, sender } = parseText(r.content);
-      rows.push({ timestamp: r.timestamp, direction: 'in', kind: r.kind, sender: sender ?? '', text });
+      const { text, sender, attachments } = parseText(r.content);
+      rows.push({
+        timestamp: r.timestamp,
+        direction: 'in',
+        kind: r.kind,
+        sender: sender ?? '',
+        text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+      });
     }
     for (const r of history.outbound) {
       const { text } = parseText(r.content);
@@ -104,7 +123,57 @@ export function formatHistoryLines(rows: HistoryRow[], timezone: string = TIMEZO
   return rows
     .map(
       (r) =>
-        `${formatLocalStamp(new Date(r.timestamp), timezone)}|${r.direction}|${r.kind}|${cell(r.sender)}|${cell(r.text)}`,
+        `${formatLocalStamp(new Date(r.timestamp), timezone)}|${r.direction}|${r.kind}|${cell(r.sender)}|${cell(r.text)}` +
+        // Outside the text cap: a file must never be cut off.
+        (r.attachments ?? []).map((p) => ` [file: ${p}]`).join(''),
     )
     .join('\n');
+}
+
+/**
+ * Handler for `ncl sessions file <session-id> <path>`: copy one file that
+ * arrived in another session of the caller's agent group (a path from
+ * `ncl sessions history`, `inbox/<folder>/<name>`) into the caller's own
+ * session, at the same path, and return where the caller's container sees
+ * it. Lets an agent in a thread open an image or document someone posted in
+ * an earlier thread, like a person scrolling back. Self-scoped like history.
+ */
+export async function sessionFile(
+  args: Record<string, unknown>,
+  ctx: CallerContext,
+): Promise<{ path: string; bytes: number }> {
+  if (ctx.caller !== 'agent') throw new Error('only an agent can fetch a file into its session');
+  const sessionId = typeof args.id === 'string' && args.id.length > 0 ? args.id : undefined;
+  if (!sessionId) throw new Error('session id is required');
+  const parts = typeof args.path === 'string' ? args.path.split('/') : [];
+  const [root, folder, name] = parts;
+  if (parts.length !== 3 || root !== 'inbox' || !isSafeAttachmentName(folder) || !isSafeAttachmentName(name)) {
+    throw new Error('path must be a file path from `ncl sessions history`, like inbox/<folder>/<name>');
+  }
+
+  const source = await getSession(sessionId);
+  if (!source || source.agent_group_id !== ctx.agentGroupId) throw new Error(`session not found: ${sessionId}`);
+
+  const from = AnchoredDir.open(sessionDir(source.agent_group_id, source.id), ['inbox', folder]);
+  if (!from) throw new Error(`file not found: ${args.path as string}`);
+  let data: Buffer;
+  try {
+    data = from.readFile(name);
+  } catch {
+    throw new Error(`file not found: ${args.path as string}`);
+  } finally {
+    from.close();
+  }
+
+  const to = AnchoredDir.open(sessionDir(ctx.agentGroupId, ctx.sessionId), ['inbox', folder], true);
+  if (!to) throw new Error("could not open this session's inbox");
+  try {
+    to.writeNewFile(name, data);
+  } catch (err) {
+    // Fetched before (or it arrived here too): the copy already in place serves.
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+  } finally {
+    to.close();
+  }
+  return { path: `/workspace/inbox/${folder}/${name}`, bytes: data.length };
 }

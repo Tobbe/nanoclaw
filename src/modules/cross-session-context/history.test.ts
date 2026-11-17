@@ -15,7 +15,7 @@ import { closeDb, createAgentGroup, initTestDb, runMigrations } from '../../db/i
 import { createSession } from '../../db/sessions.js';
 import { initSessionFolder, writeOutboundDirect, writeSessionMessage } from '../../session-manager.js';
 import type { CallerContext } from '../../cli/frame.js';
-import { formatHistoryLines, sessionHistory } from './history.js';
+import { formatHistoryLines, sessionFile, sessionHistory } from './history.js';
 
 const TEST_DIR = '/tmp/nanoclaw-test-cross-session-history';
 const AG = 'ag-hist';
@@ -142,5 +142,70 @@ describe('sessionHistory', () => {
     await writeInbound('in-1', '2026-08-01T10:00:00.000Z', 'visible');
     expect((await sessionHistory({ id: SESS }, OWN_AGENT))[0].text).toBe('visible');
     expect((await sessionHistory({ id: SESS }, HOST))[0].text).toBe('visible');
+  });
+});
+
+describe('attachments and sessionFile', () => {
+  // The thread the caller works in: a second session of the same group.
+  const HERE = 'sess-here';
+  const IN_THREAD: CallerContext = { caller: 'agent', sessionId: HERE, agentGroupId: AG, messagingGroupId: 'mg-x' };
+
+  beforeEach(async () => {
+    await createSession({
+      id: HERE,
+      agent_group_id: AG,
+      messaging_group_id: null,
+      thread_id: null,
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: '2026-08-01T00:00:00.000Z',
+    });
+    initSessionFolder(AG, HERE);
+    // A message with an image, saved to the inbox the way inbound attachments are.
+    await writeSessionMessage(AG, SESS, {
+      id: '1794.001',
+      kind: 'chat',
+      timestamp: '2026-08-01T10:00:00.000Z',
+      platformId: 'C1',
+      channelType: 'slack',
+      threadId: null,
+      content: JSON.stringify({
+        text: 'see the first one',
+        sender: 'Lise',
+        attachments: [{ name: 'image.png', type: 'image', data: Buffer.from('PNGDATA').toString('base64') }],
+      }),
+    });
+  });
+
+  it("lists a message's files in history, outside the text cap", async () => {
+    const rows = await sessionHistory({ id: SESS }, OWN_AGENT);
+    expect(rows[0].attachments).toEqual(['inbox/1794.001/image.png']);
+    expect(formatHistoryLines(rows, 'UTC')).toMatch(/\|see the first one \[file: inbox\/1794\.001\/image\.png\]$/);
+  });
+
+  it("copies a file from another session into the caller's, at the same path", async () => {
+    const res = await sessionFile({ id: SESS, path: 'inbox/1794.001/image.png' }, IN_THREAD);
+    expect(res).toEqual({ path: '/workspace/inbox/1794.001/image.png', bytes: 7 });
+    const copied = `${TEST_DIR}/v2-sessions/${AG}/${HERE}/inbox/1794.001/image.png`;
+    expect(fs.readFileSync(copied, 'utf8')).toBe('PNGDATA');
+    // Fetching again is fine: the copy already there serves.
+    await expect(sessionFile({ id: SESS, path: 'inbox/1794.001/image.png' }, IN_THREAD)).resolves.toMatchObject({
+      bytes: 7,
+    });
+  });
+
+  it("refuses another group's session, the host, and paths outside an inbox file", async () => {
+    await expect(sessionFile({ id: SESS, path: 'inbox/1794.001/image.png' }, FOREIGN_AGENT)).rejects.toThrow(
+      'session not found',
+    );
+    await expect(sessionFile({ id: SESS, path: 'inbox/1794.001/image.png' }, HOST)).rejects.toThrow('only an agent');
+    for (const path of ['inbox/../inbound.db', 'outbox/x/y.png', 'inbox/1794.001', '/etc/passwd', 'inbox/a/b/c.png']) {
+      await expect(sessionFile({ id: SESS, path }, IN_THREAD)).rejects.toThrow('path must be');
+    }
+    await expect(sessionFile({ id: SESS, path: 'inbox/1794.001/nope.png' }, IN_THREAD)).rejects.toThrow(
+      'file not found',
+    );
   });
 });

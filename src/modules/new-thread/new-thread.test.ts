@@ -142,6 +142,7 @@ describe('followNewThread', () => {
     });
     expect(seeded[1].content.echo).toMatchObject({ surface: 'thread-handoff', label: '#website' });
     expect(seeded[1].content.text).toContain('ncl sessions history s-origin');
+    expect(seeded[1].content.text).toContain('ncl sessions file s-origin --path');
     expect(seeded[1].content.text).toContain('Owns PR #25.');
   });
 

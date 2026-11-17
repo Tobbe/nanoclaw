@@ -8,7 +8,9 @@ In a group channel, `send_message({ to, text, new_thread: true, thread_reply, ha
 
 Keep `text` to one short line that says what the thread is about, like a subject line ("Three tagline ideas for the front page (I haven't changed anything)"). Put the content in `thread_reply`: it's posted as the first reply inside the new thread, so the channel stays tidy and the details sit where the conversation will happen.
 
-People reply under the new message, and you get those replies in a separate conversation that can't see this one. It starts with your opener, your `thread_reply` and your `handoff`. So write in `handoff` what that conversation needs: what the thread is about, who asked, and any pull request or branch it owns. Then say in the current thread where you continued.
+If the thread is about a file or image, pass it in `files` so people see it with the opener.
+
+People reply under the new message, and you get those replies in a separate conversation. It starts with your opener, your `thread_reply` and your `handoff`, and can read this thread whenever it needs to (`ncl sessions history`, and `ncl sessions file` for files posted here; the handoff says how). Still write in `handoff` what that conversation needs most: what the thread is about, who asked, and any pull request or branch it owns. Then say in the current thread where you continued.
 
 ### Sending files (`send_file`)
 

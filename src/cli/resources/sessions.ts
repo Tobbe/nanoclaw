@@ -1,6 +1,7 @@
 import {
   formatHistoryLines,
   HISTORY_DEFAULT_LIMIT,
+  sessionFile,
   sessionHistory,
   type HistoryRow,
 } from '../../modules/cross-session-context/index.js';
@@ -74,6 +75,26 @@ registerResource({
       // (the dispatcher's sessions pre-handler check covers this verb too).
       handler: async (args, ctx) => await sessionHistory(args, ctx),
       formatHuman: (data) => formatHistoryLines(data as HistoryRow[]),
+    },
+    file: {
+      access: 'open',
+      description:
+        'Fetch a file that arrived in another session of your agent group (a `[file: inbox/...]` path from `ncl sessions history`) into your own session, so you can open it. Pass the path with --path. Prints the path to read it from.',
+      examples: [
+        `# Open the image someone posted in an earlier thread:\nncl sessions file sess-1751234-abc123 --path inbox/1751234.5678/image.png`,
+      ],
+      args: [
+        { name: 'id', type: 'string', description: 'Session id the file arrived in.', required: true },
+        {
+          name: 'path',
+          type: 'string',
+          description: "The file's path from `ncl sessions history`, like inbox/<folder>/<name>.",
+          required: true,
+        },
+      ],
+      // Self-scoped in the handler, like history.
+      handler: async (args, ctx) => await sessionFile(args, ctx),
+      formatHuman: (data) => `Saved to ${(data as { path: string }).path}`,
     },
   },
 });

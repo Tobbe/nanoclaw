@@ -247,6 +247,45 @@ describe('send_message — new_thread', () => {
     expect(JSON.parse(row.content)).toEqual({ text: 'Three tagline ideas', newThread: true, threadReply: '1. A\n2. B' });
   });
 
+  it('stages files for the opener, with unique names', async () => {
+    const copies: Array<[string, string]> = [];
+    const spies = [
+      spyOn(fs, 'existsSync').mockReturnValue(true),
+      spyOn(fs, 'mkdirSync').mockReturnValue(undefined),
+      spyOn(fs, 'copyFileSync').mockImplementation((from, to) => {
+        copies.push([String(from), String(to)]);
+      }),
+    ];
+    try {
+      await sendMessage.handler({
+        to: 'team',
+        text: 'About this image',
+        new_thread: true,
+        files: ['/workspace/inbox/m1/image.png', 'shots/image.png'],
+      });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    const [row] = getUndeliveredMessages();
+    expect(JSON.parse(row.content).files).toEqual(['image.png', 'image-2.png']);
+    expect(copies.map(([from]) => from)).toEqual(['/workspace/inbox/m1/image.png', '/workspace/agent/shots/image.png']);
+    expect(copies.every(([, to]) => to.startsWith(`/workspace/outbox/${row.id}/`))).toBe(true);
+  });
+
+  it('refuses files without new_thread, and a missing file', async () => {
+    const without = (await sendMessage.handler({ to: 'team', text: 'hi', files: ['/tmp/x.png'] })) as { isError?: boolean };
+    expect(without.isError).toBe(true);
+    const missing = (await sendMessage.handler({
+      to: 'team',
+      text: 'hi',
+      new_thread: true,
+      files: ['/nope/missing.png'],
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(missing.isError).toBe(true);
+    expect(missing.content[0].text).toContain('missing.png');
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
   it('refuses a thread_reply without new_thread', async () => {
     const res = (await sendMessage.handler({ to: 'team', text: 'hi', thread_reply: 'x' })) as { isError?: boolean };
     expect(res.isError).toBe(true);

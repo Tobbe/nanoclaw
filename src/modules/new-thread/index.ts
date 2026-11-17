@@ -109,7 +109,9 @@ export async function followNewThread(
     text:
       `You started this thread in ${label} from another thread there` +
       (origin.thread_id ? ` (${origin.thread_id})` : '') +
-      `. \`ncl sessions history ${origin.id}\` shows that conversation.` +
+      '. You can read that thread whenever you need to, as a person would scroll back: ' +
+      `\`ncl sessions history ${origin.id} --limit 200\` shows its messages, and ` +
+      `\`ncl sessions file ${origin.id} --path <inbox/...>\` fetches a file listed there so you can open it.` +
       (handoff ? `\n\n${handoff}` : ''),
     surface: THREAD_HANDOFF_SURFACE,
   });
