@@ -78,6 +78,52 @@ let agentDmOpenedHandler: ((event: AgentDmOpenedEvent) => void | Promise<void>) 
  * open threads differently (Discord creates a channel), so they return
  * undefined and the host doesn't follow.
  */
+/** Longest caption we put on an upload; longer text goes as its own message. */
+const SLACK_CAPTION_MAX = 3000;
+
+/**
+ * Slack: post files and their text as one message (the text as the upload's
+ * caption), so the text can't land before the files, which Slack shows a
+ * moment after the upload. The adapter's own postMessage uploads the files
+ * and posts the text as a second message, and with two such posts in a row
+ * both texts appeared before both images.
+ *
+ * Returns undefined when it doesn't apply (not Slack, no text, a caption too
+ * long), and the caller falls back to postMessage. The upload has no message
+ * id of its own, so the id returned is a placeholder, like the adapter's for
+ * a files-only post.
+ */
+async function postSlackFilesWithCaption(
+  adapter: { name: string },
+  target: string,
+  markdown: string,
+  files: { data: Buffer; filename: string }[],
+): Promise<{ id: string } | undefined> {
+  if (adapter.name !== 'slack' || !markdown.trim() || files.length === 0) return undefined;
+  const slack = adapter as unknown as {
+    _client?: { files?: { uploadV2?(args: Record<string, unknown>): Promise<unknown> } };
+    getToken?(): Promise<string>;
+    decodeThreadId(id: string): { channel: string; threadTs: string };
+    formatConverter?: { toResponseUrlText?(message: { markdown: string }): string };
+  };
+  const upload = slack._client?.files?.uploadV2;
+  const toMrkdwn = slack.formatConverter?.toResponseUrlText;
+  if (!upload || !toMrkdwn || !slack.getToken) return undefined;
+  // Captions take Slack's mrkdwn, not markdown: the adapter's response_url
+  // renderer converts to it.
+  const caption = toMrkdwn.call(slack.formatConverter, { markdown });
+  if (caption.length > SLACK_CAPTION_MAX) return undefined;
+  const { channel, threadTs } = slack.decodeThreadId(target);
+  await upload.call(slack._client!.files, {
+    channel_id: channel,
+    ...(threadTs ? { thread_ts: threadTs } : {}),
+    initial_comment: caption,
+    file_uploads: files.map((f) => ({ file: f.data, filename: f.filename })),
+    token: await slack.getToken(),
+  });
+  return { id: `file-${Date.now()}` };
+}
+
 function threadIdForTopLevelMessage(
   adapter: { name: string },
   platformId: string,
@@ -1213,10 +1259,18 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
           const attachFiles = i === 0 && !filesInThread && fileUploads && fileUploads.length > 0;
-          const result = await adapter.postMessage(
-            target,
-            attachFiles ? { markdown: chunk, files: fileUploads } : { markdown: chunk },
-          );
+          // One message for text and files, except on a new thread's opener:
+          // that needs a real message id, to follow the thread it opens.
+          const combined =
+            attachFiles && !opensThread
+              ? await postSlackFilesWithCaption(adapter, target, chunk, fileUploads!)
+              : undefined;
+          const result =
+            combined ??
+            (await adapter.postMessage(
+              target,
+              attachFiles ? { markdown: chunk, files: fileUploads } : { markdown: chunk },
+            ));
           if (i === 0) {
             firstId = result?.id;
             // A new thread's opener: the rest of a long message goes inside
@@ -1235,11 +1289,12 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
               ? splitForLimit(threadReply, config.maxTextLength)
               : [threadReply];
           for (let i = 0; i < replyChunks.length; i++) {
+            const withFiles = i === 0 && filesInThread;
+            if (withFiles && (await postSlackFilesWithCaption(adapter, target, replyChunks[i], filesInThread)))
+              continue;
             await adapter.postMessage(
               target,
-              i === 0 && filesInThread
-                ? { markdown: replyChunks[i], files: filesInThread }
-                : { markdown: replyChunks[i] },
+              withFiles ? { markdown: replyChunks[i], files: filesInThread } : { markdown: replyChunks[i] },
             );
           }
         }

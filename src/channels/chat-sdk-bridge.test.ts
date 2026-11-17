@@ -1733,3 +1733,82 @@ describe('deliver — a new thread (send_message new_thread)', () => {
     expect(bridge.threadIdForMessage?.('stub:C1', '1')).toBeUndefined();
   });
 });
+
+describe('deliver — Slack files with their text as one message', () => {
+  function slackWithUploads(postMessage: Adapter['postMessage']) {
+    const uploads: Record<string, unknown>[] = [];
+    const adapter = stubAdapter({
+      name: 'slack',
+      postMessage,
+      decodeThreadId: (id: string) => ({ channel: id.split(':')[1], threadTs: id.split(':')[2] ?? '' }),
+      encodeThreadId: (d: { channel: string; threadTs: string }) => `slack:${d.channel}:${d.threadTs}`,
+      getToken: async () => 'xoxb-test',
+      formatConverter: { toResponseUrlText: (m: { markdown: string }) => m.markdown.replace(/\*\*(.+?)\*\*/g, '*$1*') },
+      _client: {
+        files: {
+          uploadV2: async (args: Record<string, unknown>) => {
+            uploads.push(args);
+            return { ok: true };
+          },
+        },
+      },
+    } as unknown as Partial<Adapter>);
+    return { adapter, uploads };
+  }
+  const files = [{ filename: 'shot.png', data: Buffer.from('png') }];
+
+  it('uploads the files with the text as their caption, in the thread, without a second post', async () => {
+    const { calls, postMessage } = makePostCapture();
+    const { adapter, uploads } = slackWithUploads(postMessage);
+    const bridge = createChatSdkBridge({ adapter, supportsThreads: true });
+    const id = await bridge.deliver('slack:C1', 'slack:C1:111.000', {
+      kind: 'chat',
+      content: { text: 'Here it is on **desktop**' },
+      files,
+    });
+    expect(calls).toHaveLength(0);
+    expect(uploads).toEqual([
+      {
+        channel_id: 'C1',
+        thread_ts: '111.000',
+        initial_comment: 'Here it is on *desktop*',
+        file_uploads: [{ file: files[0].data, filename: 'shot.png' }],
+        token: 'xoxb-test',
+      },
+    ]);
+    expect(id).toMatch(/^file-/);
+  });
+
+  it('captions the files under a new thread too, but posts the opener itself on its own', async () => {
+    const { calls, postMessage } = makePostCapture();
+    const { adapter, uploads } = slackWithUploads(postMessage);
+    const bridge = createChatSdkBridge({ adapter, supportsThreads: true });
+    const id = await bridge.deliver('slack:C1', null, {
+      kind: 'chat',
+      content: { text: 'Definition, in its own PR', newThread: true, threadReply: 'Preview and PR' },
+      files,
+    });
+    expect(id).toBe('msg-stub');
+    expect(calls).toEqual([{ threadId: 'slack:C1', message: { markdown: 'Definition, in its own PR' } }]);
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]).toMatchObject({ channel_id: 'C1', thread_ts: 'msg-stub', initial_comment: 'Preview and PR' });
+  });
+
+  it('keeps a plain new top-level post with files on the old path, which gives it a message id', async () => {
+    const { calls, postMessage } = makePostCapture();
+    const { adapter, uploads } = slackWithUploads(postMessage);
+    const bridge = createChatSdkBridge({ adapter, supportsThreads: true });
+    await bridge.deliver('slack:C1', null, { kind: 'chat', content: { text: 'Announcement', newThread: true }, files });
+    expect(uploads).toHaveLength(0);
+    expect(calls).toEqual([{ threadId: 'slack:C1', message: { markdown: 'Announcement', files } }]);
+  });
+
+  it('falls back to two posts when the caption is too long', async () => {
+    const { calls, postMessage } = makePostCapture();
+    const { adapter, uploads } = slackWithUploads(postMessage);
+    const bridge = createChatSdkBridge({ adapter, supportsThreads: true });
+    await bridge.deliver('slack:C1', 'slack:C1:111.000', { kind: 'chat', content: { text: 'x'.repeat(3001) }, files });
+    expect(uploads).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+  });
+});
