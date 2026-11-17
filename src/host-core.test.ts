@@ -323,6 +323,24 @@ describe('session manager', () => {
     expect(fs.readFileSync(expected, 'utf-8')).toBe('PNGBYTES');
   });
 
+  it('keeps every attachment when several in one message share a name', async () => {
+    initSessionFolder('ag-1', 'sess-test');
+    const { session } = await resolveSession('ag-1', 'mg-1', null, 'shared');
+    const png = (body: string) => ({ name: 'image.png', data: Buffer.from(body).toString('base64'), size: 1 });
+
+    await writeSessionMessage('ag-1', session.id, {
+      id: 'msg-dupes',
+      kind: 'chat',
+      timestamp: now(),
+      content: JSON.stringify({ text: 'logos', attachments: [png('ONE'), png('TWO'), png('THREE')] }),
+    });
+
+    const inbox = path.join(sessionDir('ag-1', session.id), 'inbox', 'msg-dupes');
+    expect(fs.readFileSync(path.join(inbox, 'image.png'), 'utf-8')).toBe('ONE');
+    expect(fs.readFileSync(path.join(inbox, 'image-2.png'), 'utf-8')).toBe('TWO');
+    expect(fs.readFileSync(path.join(inbox, 'image-3.png'), 'utf-8')).toBe('THREE');
+  });
+
   it('should resolve to existing session (shared mode)', async () => {
     const { session: s1, created: c1 } = await resolveSession('ag-1', 'mg-1', null, 'shared');
     expect(c1).toBe(true);

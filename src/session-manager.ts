@@ -380,13 +380,17 @@ function extractAttachmentFiles(
   let inbox: AnchoredDir | null | undefined;
 
   let changed = false;
+  // Names already given to this message's attachments. Platforms repeat names
+  // within one message (Slack calls every pasted screenshot "image.png"), and
+  // the exclusive create below would drop every file after the first.
+  const used = new Set<string>();
   try {
     for (const att of attachments) {
       if (typeof att.data !== 'string') continue;
 
       const rawName = deriveAttachmentName(att);
-      const filename = isSafeAttachmentName(rawName) ? rawName : `attachment-${Date.now()}`;
-      if (filename !== rawName) {
+      const filename = uniqueAttachmentName(isSafeAttachmentName(rawName) ? rawName : `attachment-${Date.now()}`, used);
+      if (!isSafeAttachmentName(rawName)) {
         log.warn('Refused unsafe attachment filename, would escape inbox', {
           messageId,
           rawName,
@@ -430,6 +434,18 @@ function extractAttachmentFiles(
   }
 
   return changed ? JSON.stringify(parsed) : contentStr;
+}
+
+/** `name`, or `name-2.ext`, `name-3.ext`… if this message already used it. */
+function uniqueAttachmentName(name: string, used: Set<string>): string {
+  let candidate = name;
+  if (used.has(candidate)) {
+    const dot = name.lastIndexOf('.');
+    const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+    for (let n = 2; used.has(candidate); n++) candidate = `${stem}-${n}${ext}`;
+  }
+  used.add(candidate);
+  return candidate;
 }
 
 /**
