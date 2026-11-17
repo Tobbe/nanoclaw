@@ -74,7 +74,7 @@ describe('RunProgressTracker', () => {
     expect(t.apply(step('b', 'running'), T1).changed).toBe(false);
     const s = t.snapshot();
     expect(s.status).toBe('failed');
-    expect(s.steps).toEqual([{ id: 'a', title: 'step a', state: 'failed', category: 'inspect' }]);
+    expect(s.steps).toEqual([{ id: 'a', title: 'step a', state: 'failed', category: 'inspect', startedAt: T0 }]);
   });
 
   it('gives every snapshot a higher seq', () => {

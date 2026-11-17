@@ -80,6 +80,23 @@ describe('summarizeStep', () => {
     expect(title('cat AGENTS.md; git status --short; git branch -a; git log --oneline')).toBe('Checked what changed');
   });
 
+  it('names the preview server and screenshots', () => {
+    const title = (c: string) => classifyCommand(c).title;
+    expect(
+      title(
+        '(yarn preview --port 4321 >/tmp/preview.log 2>&1 &); sleep 8; mkdir -p /workspace/agent/shots; ' +
+          'agent-browser set viewport 1440 900; agent-browser open http://localhost:4321/',
+      ),
+    ).toBe('Started the preview and opened a page in the browser');
+    expect(classifyCommand('agent-browser screenshot ".row" /workspace/agent/shots/a.png')).toEqual({
+      title: 'Took a screenshot',
+      category: 'inspect',
+    });
+    // The bracket trick that keeps pkill from killing its own shell.
+    expect(title('pkill -f "[a]stro preview"')).toBe('Stopped the preview');
+    expect(title('git status && git commit -m x')).toBe('Committed changes');
+  });
+
   it('uses the model description for Bash only in detailed mode', () => {
     const input = { command: 'pnpm vitest run', description: 'Run the unit tests' };
     expect(summarizeStep('Bash', input, 'concise')?.title).toBe('Ran tests');

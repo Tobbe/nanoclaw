@@ -19,7 +19,7 @@ export interface RunProgressSnapshot {
   status: RunStatus;
   stage: StepCategory | null;
   plan: { title: string; state: PlanItemState }[];
-  steps: { id: string; title: string; state: StepState; category: StepCategory }[];
+  steps: { id: string; title: string; state: StepState; category: StepCategory; startedAt?: string }[];
   earlierSteps: number;
   waiting: { on: 'question' | 'approval'; summary: string } | null;
   statusText: string | null;
@@ -74,7 +74,9 @@ export function parseRunProgressSnapshot(raw: unknown): RunProgressSnapshot | nu
       const title = text(step.title);
       if (!id || !title || !STEP_STATES.has(step.state as StepState)) continue;
       const category = CATEGORIES.has(step.category as StepCategory) ? (step.category as StepCategory) : 'other';
-      steps.push({ id, title, state: step.state as StepState, category });
+      const startedAt =
+        typeof step.startedAt === 'string' && Number.isFinite(Date.parse(step.startedAt)) ? step.startedAt : undefined;
+      steps.push({ id, title, state: step.state as StepState, category, ...(startedAt ? { startedAt } : {}) });
     }
   }
 

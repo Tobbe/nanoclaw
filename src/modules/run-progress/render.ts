@@ -91,6 +91,54 @@ interface StepGroup {
   title: string;
   state: Step['state'];
   count: number;
+  /** When the group's newest step started. */
+  startedAt?: string;
+}
+
+/** Past-tense step verbs → what the step is doing while it runs. */
+const PRESENT: Record<string, string> = {
+  asked: 'asking',
+  checked: 'checking',
+  cloned: 'cloning',
+  commented: 'commenting',
+  committed: 'committing',
+  delegated: 'delegating',
+  edited: 'editing',
+  fetched: 'fetching',
+  installed: 'installing',
+  listed: 'listing',
+  looked: 'looking',
+  opened: 'opening',
+  organised: 'organising',
+  pulled: 'pulling',
+  pushed: 'pushing',
+  ran: 'running',
+  read: 'reading',
+  searched: 'searching',
+  set: 'setting',
+  staged: 'staging',
+  started: 'starting',
+  stopped: 'stopping',
+  switched: 'switching',
+  took: 'taking',
+  used: 'using',
+  waited: 'waiting',
+  worked: 'working',
+  wrote: 'writing',
+};
+
+/**
+ * A running step reads as happening now: "Committed and pushed changes and
+ * waited for the checks" → "Committing and pushing changes and waiting for
+ * the checks". Only verbs that start a clause change (the title's first word,
+ * and words after ", " or " and "); anything unknown stays as it is.
+ */
+export function presentTense(title: string): string {
+  return title.replace(/(^|, | and )([A-Za-z]+)\b/g, (match, lead: string, word: string) => {
+    const present = PRESENT[word.toLowerCase()];
+    if (!present) return match;
+    return lead + (word[0] === word[0].toUpperCase() ? present[0].toUpperCase() + present.slice(1) : present);
+  });
 }
 
 /**
@@ -105,18 +153,32 @@ export function groupSteps(steps: Step[]): StepGroup[] {
     if (last && last.title === step.title && last.state === 'done' && step.state !== 'failed') {
       last.count += 1;
       last.state = step.state;
+      last.startedAt = step.startedAt;
     } else {
-      groups.push({ title: step.title, state: step.state, count: 1 });
+      groups.push({ title: step.title, state: step.state, count: 1, startedAt: step.startedAt });
     }
   }
   return groups;
 }
 
-function stepLines(steps: Step[], earlier: number): string {
+/**
+ * A running step on a live card reads in the present tense with its own
+ * timer ("◉ Waiting for the checks · 1m 40s"), so a long command shows which
+ * step is slow and that it's still going.
+ */
+function stepLine(g: StepGroup, nowMs: number, live: boolean): string {
+  const count = g.count > 1 ? ` ×${g.count}` : '';
+  if (g.state !== 'running' || !live) return `${STEP_MARK[g.state]} ${safeText(g.title)}${count}`;
+  const start = g.startedAt ? Date.parse(g.startedAt) : NaN;
+  const timer = Number.isFinite(start) && nowMs - start >= 1000 ? ` · ${formatElapsed(nowMs - start)}` : '';
+  return `${STEP_MARK.running} ${safeText(presentTense(g.title))}${count}${timer}`;
+}
+
+function stepLines(steps: Step[], earlier: number, nowMs: number, live: boolean): string {
   const groups = groupSteps(steps);
   const shown = groups.slice(-MAX_STEPS_SHOWN);
   const hidden = earlier + groups.slice(0, groups.length - shown.length).reduce((n, g) => n + g.count, 0);
-  const lines = shown.map((g) => `${STEP_MARK[g.state]} ${safeText(g.title)}${g.count > 1 ? ` ×${g.count}` : ''}`);
+  const lines = shown.map((g) => stepLine(g, nowMs, live));
   if (hidden > 0) lines.unshift(`+ ${plural(hidden, 'earlier step')}`);
   return lines.join('\n');
 }
@@ -150,7 +212,7 @@ export function renderRunCard(snapshot: RunProgressSnapshot, nowMs: number, opts
     if (snapshot.status === 'waiting') {
       // Nothing else while paused.
     } else if (snapshot.plan.length > 0) lines.push(planLines(snapshot.plan));
-    else if (steps.length > 0) lines.push(stepLines(steps, snapshot.earlierSteps));
+    else if (steps.length > 0) lines.push(stepLines(steps, snapshot.earlierSteps, nowMs, live));
     else if (snapshot.statusText) lines.push(safeText(snapshot.statusText));
   } else if (snapshot.status === 'done' && !interrupted) {
     // Collapsed: the answer below says the rest.
@@ -162,7 +224,7 @@ export function renderRunCard(snapshot: RunProgressSnapshot, nowMs: number, opts
         ? `❌ *Failed* after ${elapsed} · ${plural(total, 'step')}${failed > 0 ? `, ${failed} failed` : ''}`
         : `⏹️ *Stopped* after ${elapsed} · ${plural(total, 'step')}`;
     lines.push(head);
-    if (steps.length > 0) lines.push(stepLines(steps, snapshot.earlierSteps));
+    if (steps.length > 0) lines.push(stepLines(steps, snapshot.earlierSteps, nowMs, live));
   }
 
   const fallbackText = lines.join('\n');

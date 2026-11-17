@@ -80,7 +80,9 @@ describe('poll loop → run progress', () => {
     });
     const last = rows[rows.length - 1].content.snapshot;
     expect(last.status).toBe('done');
-    expect(last.steps).toEqual([{ id: 'a', title: 'Read file-a.ts', state: 'done', category: 'inspect' }]);
+    expect(last.steps).toEqual([
+      { id: 'a', title: 'Read file-a.ts', state: 'done', category: 'inspect', startedAt: expect.any(String) },
+    ]);
     const seqs = rows.map((r) => r.content.snapshot.seq as number);
     expect([...seqs].sort((x, y) => x - y)).toEqual(seqs);
 

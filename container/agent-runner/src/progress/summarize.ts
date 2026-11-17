@@ -101,6 +101,14 @@ function hostname(url: string): string | undefined {
  * chains several (build, commit, push, open a PR, wait for CI) gets all of
  * them in its label, in order; a chain of look-arounds keeps one label.
  */
+/** Checking work in a browser: the preview server and agent-browser. First match wins. */
+const PREVIEW_LABELS: Array<[RegExp, string]> = [
+  [/\bpkill\b.*\bstro\s+preview\b/, 'Stopped the preview'],
+  [/(^|[\s;&|(])((yarn|npm|pnpm|bun)\s+(run\s+)?preview|astro\s+preview)\b/, 'Started the preview'],
+  [/\bagent-browser\s+screenshot\b/, 'Took a screenshot'],
+  [/\bagent-browser\s+(open|goto|navigate)\b/, 'Opened a page in the browser'],
+];
+
 const ACTION_TITLES = new Set([
   'Ran tests',
   'Ran a build',
@@ -111,10 +119,15 @@ const ACTION_TITLES = new Set([
   'Opened a pull request',
   'Commented on a pull request',
   'Waited for the checks',
+  'Started the preview',
+  'Stopped the preview',
+  'Took a screenshot',
+  'Opened a page in the browser',
 ]);
 
 /** One step of a chain: what a single command does, or null when it's not an action. */
 function segmentAction(segment: string): string | null {
+  for (const [pattern, title] of PREVIEW_LABELS) if (pattern.test(segment)) return title;
   if (TEST_COMMAND.test(segment)) return 'Ran tests';
   if (BUILD_COMMAND.test(segment)) return 'Ran a build';
   if (INSTALL_COMMAND.test(segment)) return 'Installed dependencies';
@@ -157,8 +170,13 @@ function joinActions(actions: string[]): string {
 /** Classify a shell command into a fixed label. The command itself is never returned. */
 export function classifyCommand(command: string): StepSummary {
   const actions = chainedActions(command);
-  if (actions.length > 1) {
-    return { title: joinActions(actions), category: actions.includes('Ran tests') ? 'test' : 'run' };
+  if (actions.length > 0) {
+    const category = actions.includes('Ran tests')
+      ? 'test'
+      : actions.every((a) => a === 'Took a screenshot' || a === 'Opened a page in the browser')
+        ? 'inspect'
+        : 'run';
+    return { title: joinActions(actions), category };
   }
   if (TEST_COMMAND.test(command)) return { title: 'Ran tests', category: 'test' };
   if (BUILD_COMMAND.test(command)) return { title: 'Ran a build', category: 'run' };

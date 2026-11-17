@@ -42,6 +42,8 @@ export interface StepView {
   title: string;
   state: StepState;
   category: StepCategory;
+  /** When the step started (ISO): the card times the running step from it. */
+  startedAt?: string;
 }
 
 /**

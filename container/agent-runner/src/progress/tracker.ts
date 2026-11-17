@@ -46,7 +46,7 @@ export class RunProgressTracker {
 
   apply(detail: ProgressDetail, now: string): ApplyResult {
     if (this.terminal) return { changed: false, urgent: false };
-    const result = this.fold(detail);
+    const result = this.fold(detail, now);
     if (result.changed) this.updatedAt = now;
     return result;
   }
@@ -92,7 +92,7 @@ export class RunProgressTracker {
     return this.steps.length ? this.steps[this.steps.length - 1].category : null;
   }
 
-  private fold(detail: ProgressDetail): ApplyResult {
+  private fold(detail: ProgressDetail, now: string): ApplyResult {
     switch (detail.kind) {
       case 'step': {
         const existing = this.steps.find((s) => s.id === detail.id);
@@ -102,7 +102,13 @@ export class RunProgressTracker {
           existing.state = detail.state;
           existing.title = detail.title;
         } else {
-          this.steps.push({ id: detail.id, title: detail.title, state: detail.state, category: detail.category });
+          this.steps.push({
+            id: detail.id,
+            title: detail.title,
+            state: detail.state,
+            category: detail.category,
+            startedAt: now,
+          });
           if (this.steps.length > this.maxSteps) {
             this.steps.shift();
             this.earlierSteps += 1;

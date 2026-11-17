@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { cardProblems } from '../../channels/card-parts.js';
-import { formatElapsed, renderRunCard, safeText, visibleSteps } from './render.js';
+import { formatElapsed, presentTense, renderRunCard, safeText, visibleSteps } from './render.js';
 import type { RunProgressSnapshot } from './snapshot.js';
 
 const START = Date.parse('2026-11-12T10:00:00.000Z');
@@ -173,5 +173,47 @@ describe('renderRunCard', () => {
     const r = renderRunCard(snap({ steps: [step('a', 'Read README.md')] }), START + 3_000);
     expect(r.content.fallbackText).toBe('⏳ *Working on it* · 3s\n✓ Read README.md');
     expect(r.fingerprint).toBe(r.content.fallbackText);
+  });
+});
+
+describe('the running step', () => {
+  const running = (title: string, startedMs: number): Step => ({
+    id: 'r',
+    title,
+    state: 'running',
+    category: 'run',
+    startedAt: new Date(startedMs).toISOString(),
+  });
+
+  it('reads in the present tense with its own timer while the run is live', () => {
+    const s = snap({
+      steps: [
+        step('a', 'Ran a build'),
+        running('Committed and pushed changes and waited for the checks', START + 20_000),
+      ],
+    });
+    const text = lines(s, START + 120_000).join('\n');
+    expect(text).toContain('✓ Ran a build');
+    expect(text).toContain('◉ Committing and pushing changes and waiting for the checks · 1m 40s');
+  });
+
+  it('goes back to the past tense, without a timer, once the run is over', () => {
+    const s = snap({
+      status: 'failed',
+      steps: [{ ...running('Waited for the checks', START), state: 'done' }],
+    });
+    const text = lines(s, START + 600_000).join('\n');
+    expect(text).toContain('✓ Waited for the checks');
+    expect(text).not.toContain('Waiting');
+  });
+
+  it('turns only known verbs that start a clause', () => {
+    expect(presentTense('Read logos-light.png')).toBe('Reading logos-light.png');
+    expect(presentTense('Ran a build, committed and pushed changes')).toBe(
+      'Running a build, committing and pushing changes',
+    );
+    expect(presentTense('Set up git')).toBe('Setting up git');
+    expect(presentTense('Run the unit tests')).toBe('Run the unit tests');
+    expect(presentTense('Used my_server: do thing')).toBe('Using my_server: do thing');
   });
 });
