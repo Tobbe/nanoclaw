@@ -170,6 +170,26 @@ describe('formatter rendering', () => {
     expect(result).toMatch(/<channel-history sender="Tobbe" time="[^"]*" answered="in its own thread">/);
   });
 
+  it('renders a new thread opener as your own channel-history and the note as <thread-handoff>', () => {
+    insertMessage(
+      'nt-opener',
+      'chat',
+      { text: 'Logo strip: new PR', self: true, echo: { surface: 'channel-timeline', label: '#website' } },
+      { trigger: 0, channelType: 'session-echo' },
+    );
+    insertMessage(
+      'nt-handoff',
+      'chat',
+      { text: 'Owns PR #25 & its <preview>.', self: true, echo: { surface: 'thread-handoff', label: '#website' } },
+      { trigger: 0, channelType: 'session-echo' },
+    );
+
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('<channel-history sender="you"');
+    expect(result).toMatch(/<thread-handoff time="[^"]*">Owns PR #25 &amp; its &lt;preview&gt;\.<\/thread-handoff>/);
+    expect(result).not.toContain('<cross-session-context');
+  });
+
   it('XML-escapes label, sender, and text', () => {
     insertEcho('e1', { text: '<b>&"hi"</b>', sender: 'A & B', label: 'DM with <Gavriel>' });
 

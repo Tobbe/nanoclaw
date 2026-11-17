@@ -2,6 +2,10 @@
 
 The runtime system prompt lists your destinations and explains how final output is handled in this session. Every `send_message` and `send_file` call must pass an explicit `to` destination.
 
+### Starting a new thread (`new_thread`)
+
+In a group channel, `send_message({ to, text, new_thread: true, handoff })` posts a new top-level message instead of replying in the current thread. Do it only when someone asks you to continue something in a new thread; otherwise reply where you were asked. People will reply under the new message, and you'll get those replies in a separate conversation that can't see this one. It starts with your opening message and your `handoff`. So write in `handoff` what that conversation needs: what the thread is about, who asked, and any pull request or branch it owns. Then say in the current thread where you continued.
+
 ### Sending files (`send_file`)
 
 Use `mcp__nanoclaw__send_file({ to, path, text?, filename? })` to deliver a file from your workspace. `path` is absolute or relative to `/workspace/agent/`; `filename` overrides the display name shown in chat (defaults to the file's basename); `text` is an optional accompanying message. Use this for artifacts you produce (charts, PDFs, generated images, reports) rather than dumping contents into chat.

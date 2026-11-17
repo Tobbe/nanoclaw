@@ -79,6 +79,16 @@ export const sendMessage: McpToolDefinition = {
           description: 'Destination name (e.g., "family", "worker-1").',
         },
         text: { type: 'string', description: 'Message content' },
+        new_thread: {
+          type: 'boolean',
+          description:
+            'Post as a new top-level message in a group channel, starting a new thread, instead of replying in the current one. Only when someone asks for a new thread.',
+        },
+        handoff: {
+          type: 'string',
+          description:
+            'With new_thread: a note to yourself for the new thread (what it is about, where it came from, any pull request it owns). You read it when someone replies there.',
+        },
       },
       required: ['to', 'text'],
     },
@@ -86,25 +96,36 @@ export const sendMessage: McpToolDefinition = {
   async handler(args) {
     const to = args.to as string;
     const text = args.text as string;
+    const newThread = args.new_thread === true;
+    const handoff = typeof args.handoff === 'string' ? args.handoff.trim() : '';
     if (!to) return err(`to is required. Options: ${destinationList()}`);
     if (!text) return err('text is required');
+    if (handoff && !newThread) return err('handoff only applies with new_thread: true');
 
     const routing = resolveRouting(to);
     if ('error' in routing) return err(routing.error);
+    if (newThread && routing.channel_type === 'agent') {
+      return err(`new_thread needs a channel destination; "${to}" is an agent`);
+    }
 
     const id = generateId();
     const seq = await writeMessageOut({
       id,
-      in_reply_to: getCurrentInReplyTo(),
+      // A new thread answers nothing: no reply quote, no thread.
+      in_reply_to: newThread ? null : getCurrentInReplyTo(),
       kind: 'chat',
       platform_id: routing.platform_id,
       channel_type: routing.channel_type,
-      thread_id: routing.thread_id,
-      content: JSON.stringify({ text }),
+      thread_id: newThread ? null : routing.thread_id,
+      content: JSON.stringify(newThread ? { text, newThread: true, ...(handoff ? { handoff } : {}) } : { text }),
     });
 
-    log(`send_message: #${seq} → ${routing.resolvedName}`);
-    return ok(`Message sent to ${routing.resolvedName} (id: ${seq})`);
+    log(`send_message: #${seq} → ${routing.resolvedName}${newThread ? ' (new thread)' : ''}`);
+    return ok(
+      newThread
+        ? `Posted to ${routing.resolvedName} as a new thread (id: ${seq}). Replies there reach you in a separate conversation that starts with your handoff note; it doesn't see this one.`
+        : `Message sent to ${routing.resolvedName} (id: ${seq})`,
+    );
   },
 };
 

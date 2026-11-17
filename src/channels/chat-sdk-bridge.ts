@@ -71,6 +71,25 @@ export interface AgentDmOpenedEvent {
 
 let agentDmOpenedHandler: ((event: AgentDmOpenedEvent) => void | Promise<void>) | null = null;
 
+/**
+ * The thread a top-level message opens, as the Chat SDK addresses it: the id
+ * replies in that thread carry. Slack only: a reply's thread is its parent's
+ * `ts`, which is the id the adapter returned for the post. Other platforms
+ * open threads differently (Discord creates a channel), so they return
+ * undefined and the host doesn't follow.
+ */
+function threadIdForTopLevelMessage(
+  adapter: { name: string },
+  platformId: string,
+  messageId: string,
+): string | undefined {
+  if (adapter.name !== 'slack') return undefined;
+  const slack = adapter as unknown as {
+    decodeThreadId(id: string): { channel: string };
+    encodeThreadId(data: { channel: string; threadTs: string }): string;
+  };
+  return slack.encodeThreadId({ channel: slack.decodeThreadId(platformId).channel, threadTs: messageId });
+}
 export function setAgentDmOpenedHandler(fn: (event: AgentDmOpenedEvent) => void | Promise<void>): void {
   agentDmOpenedHandler = fn;
 }
@@ -1183,14 +1202,22 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
             ? splitForLimit(text, config.maxTextLength)
             : [text];
         let firstId: string | undefined;
+        let target = tid;
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
           const attachFiles = i === 0 && fileUploads && fileUploads.length > 0;
           const result = await adapter.postMessage(
-            tid,
+            target,
             attachFiles ? { markdown: chunk, files: fileUploads } : { markdown: chunk },
           );
-          if (i === 0) firstId = result?.id;
+          if (i === 0) {
+            firstId = result?.id;
+            // A new thread's opener: the rest of a long message goes inside
+            // the thread it just opened, not as more top-level posts.
+            if (content.newThread === true && threadId === null && firstId) {
+              target = threadIdForTopLevelMessage(adapter, platformId, firstId) ?? target;
+            }
+          }
         }
         return firstId;
       } else if (message.files && message.files.length > 0) {
@@ -1235,6 +1262,10 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       // is the SDK's thread id, which is what the router already has from
       // the original inbound event.
       await state.subscribe(threadId);
+    },
+
+    threadIdForMessage(platformId: string, messageId: string): string | undefined {
+      return threadIdForTopLevelMessage(adapter, platformId, messageId);
     },
   };
 

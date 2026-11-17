@@ -293,6 +293,11 @@ function formatEchoMessage(msg: MessageInRow): string {
   // echoes from other live surfaces which must never be acted on in-place.
   // dm-timeline = a DM's timeline; channel-timeline = a group conversation's
   // (per-thread groups).
+  // A note you left yourself when you started this thread (send_message
+  // new_thread): first-class context for this thread, like its timeline.
+  if (content.echo?.surface === 'thread-handoff') {
+    return `<thread-handoff time="${escapeXml(time)}">${escapeXml(content.text || '')}</thread-handoff>`;
+  }
   if (content.echo?.surface === 'dm-timeline' || content.echo?.surface === 'channel-timeline') {
     const tag = content.echo.surface === 'channel-timeline' ? 'channel-history' : 'dm-history';
     // A thread opener you already replied to in its own thread: the reply

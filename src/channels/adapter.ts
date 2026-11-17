@@ -295,6 +295,15 @@ export interface ChannelAdapter {
   subscribe?(platformId: string, threadId: string): Promise<void>;
 
   /**
+   * The thread id that a top-level message, just posted to `platformId` and
+   * returned as `messageId` by `deliver`, opens: the id replies in that
+   * thread will carry. Lets the host follow a thread the agent started
+   * (send_message new_thread). Omit on platforms where a top-level message
+   * doesn't open a thread; the host then posts it without following it.
+   */
+  threadIdForMessage?(platformId: string, messageId: string): string | undefined;
+
+  /**
    * Open (or fetch) a DM with this user, returning the platform_id of the
    * resulting DM channel. Called by the host on demand to initiate cold
    * DMs — approvals, pairing handshakes, host-initiated notifications — to

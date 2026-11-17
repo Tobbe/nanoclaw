@@ -430,7 +430,7 @@ async function completeDelivery(
       );
       for (const hook of postDeliveryHooks) {
         try {
-          await hook(msg, session, { firstDelivery });
+          await hook(msg, session, { firstDelivery, platformMessageId: platformMsgId });
         } catch (err) {
           log.warn('Post-delivery hook failed', { messageId: msg.id, sessionId: session.id, err });
         }
@@ -761,6 +761,8 @@ export interface PostDeliveryInfo {
    * hook only ever observes user-facing rows.
    */
   firstDelivery: boolean;
+  /** The platform's id for the posted message (Slack: its `ts`), when the adapter returned one. */
+  platformMessageId?: string;
 }
 
 export type PostDeliveryHook = (msg: OutboundMessage, session: Session, info: PostDeliveryInfo) => void | Promise<void>;

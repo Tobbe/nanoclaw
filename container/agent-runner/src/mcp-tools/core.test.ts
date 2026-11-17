@@ -205,3 +205,47 @@ describe('send_message / send_file — thread for a channel destination', () => 
     expect(await sendBoth()).toEqual([null, null]);
   });
 });
+
+describe('send_message — new_thread', () => {
+  beforeEach(() => {
+    seedChannelDestination('team', 'slack', 'C123');
+    seedInbound('in-1', 'slack', 'C123', 'T-42');
+    publishReplyRoute({ inReplyTo: 'in-1', channelType: 'slack', platformId: 'C123', threadId: 'T-42' });
+  });
+
+  it('posts top-level, answering nothing, and carries the handoff to the host', async () => {
+    const res = (await sendMessage.handler({
+      to: 'team',
+      text: 'Logo strip: new PR',
+      new_thread: true,
+      handoff: '  Owns PR #25.  ',
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toContain('new thread');
+    const [row] = getUndeliveredMessages();
+    expect(row.thread_id).toBeNull();
+    expect(row.in_reply_to).toBeNull();
+    expect(JSON.parse(row.content)).toEqual({ text: 'Logo strip: new PR', newThread: true, handoff: 'Owns PR #25.' });
+  });
+
+  it('leaves a normal reply in the current thread, with no new-thread fields', async () => {
+    await sendMessage.handler({ to: 'team', text: 'hi' });
+    const [row] = getUndeliveredMessages();
+    expect(row.thread_id).toBe('T-42');
+    expect(JSON.parse(row.content)).toEqual({ text: 'hi' });
+  });
+
+  it('refuses a handoff without new_thread', async () => {
+    const res = (await sendMessage.handler({ to: 'team', text: 'hi', handoff: 'x' })) as { isError?: boolean };
+    expect(res.isError).toBe(true);
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it('refuses a new thread to an agent destination', async () => {
+    const res = (await sendMessage.handler({ to: 'peer', text: 'hi', new_thread: true })) as { isError?: boolean };
+    expect(res.isError).toBe(true);
+    expect((res as unknown as { content: Array<{ text: string }> }).content[0].text).toContain('is an agent');
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+});
