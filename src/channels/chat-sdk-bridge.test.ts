@@ -1692,6 +1692,29 @@ describe('deliver — a new thread (send_message new_thread)', () => {
     expect(bridge.threadIdForMessage?.('slack:C1', '123.456')).toBe('slack:C1:123.456');
   });
 
+  it("puts the opener's files inside the thread, with the details", async () => {
+    const { calls, postMessage } = makePostCapture();
+    const bridge = createChatSdkBridge({ adapter: slackStub(postMessage), supportsThreads: true });
+    const files = [{ filename: 'image.png', data: Buffer.from('x') }];
+    await bridge.deliver('slack:C1', null, {
+      kind: 'chat',
+      content: { text: 'About the first image', newThread: true, threadReply: 'Here it is.' },
+      files,
+    });
+    expect(calls.map((c) => c.threadId)).toEqual(['slack:C1', 'slack:C1:msg-stub']);
+    expect(calls[0].message).toEqual({ markdown: 'About the first image' });
+    expect(calls[1].message).toEqual({ markdown: 'Here it is.', files });
+
+    calls.length = 0;
+    await bridge.deliver('slack:C1', null, {
+      kind: 'chat',
+      content: { text: 'Just the image', newThread: true },
+      files,
+    });
+    expect(calls.map((c) => c.threadId)).toEqual(['slack:C1', 'slack:C1:msg-stub']);
+    expect(calls[1].message).toEqual({ markdown: '', files });
+  });
+
   it("puts a long opener's later parts in the thread too", async () => {
     const { calls, postMessage } = makePostCapture();
     const bridge = createChatSdkBridge({ adapter: slackStub(postMessage), supportsThreads: true, maxTextLength: 20 });
