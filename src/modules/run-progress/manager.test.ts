@@ -239,6 +239,46 @@ describe('RunCardManager', () => {
     expect(h.saved.at(-1)?.status).toBe('cancelled');
   });
 
+  it('closes the old card as Interrupted when a restart starts a new run in the same session', async () => {
+    // The container is killed mid-run and the host starts a fresh one at once,
+    // so the session's container never looks gone: only the new run tells.
+    const h = harness();
+    h.manager.accept('sess', snap(1), TARGET);
+    await h.run(8000);
+    expect(h.calls.filter((c) => c.op === 'post')).toHaveLength(1);
+    h.manager.accept('sess', snap(1, { runId: 'run-2' }), TARGET);
+    await h.run(2000);
+    expect(h.calls.some((c) => c.op === 'edit' && c.title.includes('Interrupted'))).toBe(true);
+    expect(h.saved.find((r) => r.run_id === 'run-1' && r.status === 'cancelled')).toBeDefined();
+    // Another session's run is left alone.
+    h.manager.accept('other', snap(1, { runId: 'run-3' }), TARGET);
+    await h.run(2000);
+    expect(h.saved.some((r) => r.run_id === 'run-2' && r.status === 'cancelled')).toBe(false);
+  });
+
+  it('closes a restored card as Interrupted when its session already ran something newer', async () => {
+    const h = harness();
+    const row: RunCardRow = {
+      session_id: 'sess',
+      run_id: 'run-1',
+      channel_type: 'slack',
+      platform_id: 'C1',
+      thread_id: 'T1',
+      instance: 'slack',
+      platform_message_id: 'ts-9',
+      status: 'running',
+      seq: 3,
+      snapshot_json: JSON.stringify(snap(3)),
+      closed: 0,
+      created_at: new Date(T0).toISOString(),
+      updated_at: new Date(T0).toISOString(),
+    } as RunCardRow;
+    h.manager.restore(row, snap(3), { superseded: true });
+    await h.run(2000);
+    expect(h.calls.at(-1)).toMatchObject({ op: 'edit', messageId: 'ts-9' });
+    expect(h.calls.at(-1)?.title).toContain('Interrupted');
+  });
+
   it('drops an unposted card whose container went away', async () => {
     const h = harness({ running: false, config: { staleAfterMs: 2000 } });
     h.manager.accept('sess', snap(1), TARGET);

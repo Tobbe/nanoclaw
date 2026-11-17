@@ -21,7 +21,14 @@ import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
 import { Receipts, wantsReceipt } from './receipts.js';
 import { parseRunProgressSnapshot, type RunProgressSnapshot } from './snapshot.js';
-import { listOpenRunCards, pruneFinishedRunCards, recordRunCardSnapshot, rowSnapshot, saveRunCard } from './store.js';
+import {
+  hasNewerRun,
+  listOpenRunCards,
+  pruneFinishedRunCards,
+  recordRunCardSnapshot,
+  rowSnapshot,
+  saveRunCard,
+} from './store.js';
 
 export { parseRunProgressSnapshot, type RunProgressSnapshot } from './snapshot.js';
 
@@ -205,7 +212,9 @@ onHostStart(async () => {
     await pruneFinishedRunCards(new Date(Date.now() - KEEP_FINISHED_MS).toISOString());
     for (const row of await listOpenRunCards()) {
       const snapshot = rowSnapshot(row);
-      if (snapshot) runCards.restore(row, snapshot);
+      if (snapshot) {
+        runCards.restore(row, snapshot, { superseded: await hasNewerRun(row.session_id, row.created_at) });
+      }
     }
   } catch (err) {
     log.warn('Run cards: restore failed', { err });

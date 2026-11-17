@@ -135,6 +135,16 @@ export class RunCardManager {
       this.markFinished(key);
       return;
     }
+    // A session runs one turn at a time, so a new run means any older run
+    // still open in the same session is over: its container was killed and
+    // the host started a fresh one (a restart mid-run). The liveness check
+    // can't see that, because the session's container is running again, so
+    // without this the old card ticks on as "Working on it" forever.
+    for (const other of this.cards.values()) {
+      if (other.sessionId === sessionId && !other.interrupted && !isFinal(other.snapshot.status)) {
+        other.interrupted = true;
+      }
+    }
     this.evictIfFull();
     const now = this.now();
     this.cards.set(key, {
@@ -160,7 +170,7 @@ export class RunCardManager {
    * one is re-rendered and kept, or closed as Interrupted if its container
    * doesn't come back.
    */
-  restore(row: RunCardRow, snapshot: RunProgressSnapshot): void {
+  restore(row: RunCardRow, snapshot: RunProgressSnapshot, opts: { superseded?: boolean } = {}): void {
     const key = `${row.session_id}:${row.run_id}`;
     if (this.cards.has(key)) return;
     this.evictIfFull();
@@ -183,7 +193,8 @@ export class RunCardManager {
       // Unknown what the old host last showed: render the stored snapshot again.
       renderedSeq: 0,
       renderedFinal: false,
-      interrupted: false,
+      // A later run in the same session means this one already ended.
+      interrupted: opts.superseded === true && !isFinal(snapshot.status),
       backoffUntil: 0,
       notRunningSince: now,
       finalAttempts: 0,

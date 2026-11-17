@@ -121,6 +121,16 @@ export async function listOpenRunCards(): Promise<RunCardRow[]> {
   return getDb().all<RunCardRow>(`SELECT * FROM run_progress_cards WHERE closed = 0 ORDER BY created_at`);
 }
 
+/** True when the session started another run after this one: this one is over, whatever its card says. */
+export async function hasNewerRun(sessionId: string, createdAtIso: string): Promise<boolean> {
+  const row = await getDb().get<{ n: number }>(
+    `SELECT 1 AS n FROM run_progress_cards WHERE session_id = ? AND created_at > ? LIMIT 1`,
+    sessionId,
+    createdAtIso,
+  );
+  return row !== undefined;
+}
+
 /** Drop closed cards older than `beforeIso` — they are history, nothing reads them. */
 export async function pruneFinishedRunCards(beforeIso: string): Promise<void> {
   await getDb().run(`DELETE FROM run_progress_cards WHERE closed = 1 AND updated_at < ?`, beforeIso);
