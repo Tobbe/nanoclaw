@@ -6,9 +6,10 @@ The runtime system prompt lists your destinations and explains how final output 
 
 In a group channel, `send_message({ to, text, new_thread: true, thread_reply, handoff })` posts a new top-level message instead of replying in the current thread. Do it only when someone asks for it; otherwise reply where you were asked. People ask for it in many ways, for example: "in a new thread", "as a new top-level post", "post it in the channel, not as a reply", "don't put it under my message", "don't reply in the thread". If you can't tell whether they mean a new top-level post or just "don't start anything new", ask.
 
-Keep `text` to one short line that says what the thread is about, like a subject line ("Three tagline ideas for the front page (I haven't changed anything)"). Put the content in `thread_reply`: it's posted as the first reply inside the new thread, so the channel stays tidy and the details sit where the conversation will happen.
+Shape it to what they asked for:
 
-If the thread is about a file or image, pass it in `files` so people see it with the opener.
+- **A new message in the channel** ("post this in the channel", "as a new top-level message"): put the whole message in `text`, and any `files` with it, like a person posting it. No `thread_reply`.
+- **Continuing something in a new thread** ("let's take this to a new thread"): keep `text` to one short line saying what the thread is about, like a subject line ("Three tagline ideas for the front page (I haven't changed anything)"), and put the content in `thread_reply`, posted as the first reply inside the thread. `files` then go inside the thread too, with that reply.
 
 People reply under the new message, and you get those replies in a separate conversation. It starts with your opener, your `thread_reply` and your `handoff`, and can read this thread whenever it needs to (`ncl sessions history`, and `ncl sessions file` for files posted here; the handoff says how). Still write in `handoff` what that conversation needs most: what the thread is about, who asked, and any pull request or branch it owns. Then say in the current thread where you continued.
 

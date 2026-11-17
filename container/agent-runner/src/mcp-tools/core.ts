@@ -93,12 +93,12 @@ export const sendMessage: McpToolDefinition = {
           type: 'array',
           items: { type: 'string' },
           description:
-            'With new_thread: files to post with the opener so people see them there, e.g. the image the thread is about (paths absolute or relative to /workspace/agent/).',
+            'With new_thread: files to post, e.g. the image the thread is about (paths absolute or relative to /workspace/agent/). They go with thread_reply inside the thread when there is one, otherwise with the post.',
         },
         thread_reply: {
           type: 'string',
           description:
-            'With new_thread: posted as the first reply inside the new thread, right after `text`. Use it to keep `text` a short top-level line and put the details in the thread.',
+            'With new_thread: posted as the first reply inside the new thread, right after `text`. For continuing something in a new thread: `text` a short line, the content here. Leave it out for a plain new channel message.',
         },
       },
       required: ['to', 'text'],

@@ -1203,13 +1203,16 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
             : [text];
         let firstId: string | undefined;
         let target = tid;
-        // A new thread's files go inside the thread, with its details: Slack
-        // uploads files as their own message, so on the opener they would
-        // land top-level beside it.
         const opensThread = content.newThread === true && threadId === null;
+        const threadReply =
+          opensThread && typeof content.threadReply === 'string' ? transformText(content.threadReply) : '';
+        // With details for inside the thread, the files go there with them
+        // (Slack uploads files as their own message, so on a short opener
+        // they'd sit top-level beside it). Without, they stay with the post.
+        const filesInThread = threadReply !== '' && fileUploads && fileUploads.length > 0 ? fileUploads : undefined;
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
-          const attachFiles = i === 0 && !opensThread && fileUploads && fileUploads.length > 0;
+          const attachFiles = i === 0 && !filesInThread && fileUploads && fileUploads.length > 0;
           const result = await adapter.postMessage(
             target,
             attachFiles ? { markdown: chunk, files: fileUploads } : { markdown: chunk },
@@ -1226,19 +1229,17 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
         // The details under a new thread's short opener (send_message
         // thread_reply). Where the platform can't open a thread from a post,
         // they follow as a plain message rather than get lost.
-        const threadReply =
-          opensThread && typeof content.threadReply === 'string' ? transformText(content.threadReply) : '';
-        const threadFiles = opensThread && fileUploads && fileUploads.length > 0 ? fileUploads : undefined;
-        if (firstId && (threadReply || threadFiles)) {
-          const replyChunks = !threadReply
-            ? ['']
-            : config.maxTextLength && threadReply.length > config.maxTextLength
+        if (firstId && threadReply) {
+          const replyChunks =
+            config.maxTextLength && threadReply.length > config.maxTextLength
               ? splitForLimit(threadReply, config.maxTextLength)
               : [threadReply];
           for (let i = 0; i < replyChunks.length; i++) {
             await adapter.postMessage(
               target,
-              i === 0 && threadFiles ? { markdown: replyChunks[i], files: threadFiles } : { markdown: replyChunks[i] },
+              i === 0 && filesInThread
+                ? { markdown: replyChunks[i], files: filesInThread }
+                : { markdown: replyChunks[i] },
             );
           }
         }
