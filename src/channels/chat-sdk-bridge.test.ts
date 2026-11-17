@@ -1665,3 +1665,52 @@ it('refuses a card edit that breaks the card limits', async () => {
     }),
   ).rejects.toThrow(/card refused/);
 });
+
+describe('deliver — a new thread (send_message new_thread)', () => {
+  function slackStub(postMessage: Adapter['postMessage']): Adapter {
+    return stubAdapter({
+      name: 'slack',
+      postMessage,
+      decodeThreadId: (id: string) => ({ channel: id.split(':')[1], threadTs: id.split(':')[2] ?? '' }),
+      encodeThreadId: (d: { channel: string; threadTs: string }) => `slack:${d.channel}:${d.threadTs}`,
+    } as unknown as Partial<Adapter>);
+  }
+
+  it('posts the opener top-level and the thread_reply inside the thread it opened', async () => {
+    const { calls, postMessage } = makePostCapture();
+    const bridge = createChatSdkBridge({ adapter: slackStub(postMessage), supportsThreads: true });
+    const id = await bridge.deliver('slack:C1', null, {
+      kind: 'chat',
+      content: { text: 'Three tagline ideas', newThread: true, threadReply: '1. A\n2. B' },
+    });
+    expect(id).toBe('msg-stub');
+    expect(calls.map((c) => c.threadId)).toEqual(['slack:C1', 'slack:C1:msg-stub']);
+    expect(calls.map((c) => (c.message as { markdown: string }).markdown)).toEqual([
+      'Three tagline ideas',
+      '1. A\n2. B',
+    ]);
+    expect(bridge.threadIdForMessage?.('slack:C1', '123.456')).toBe('slack:C1:123.456');
+  });
+
+  it("puts a long opener's later parts in the thread too", async () => {
+    const { calls, postMessage } = makePostCapture();
+    const bridge = createChatSdkBridge({ adapter: slackStub(postMessage), supportsThreads: true, maxTextLength: 20 });
+    await bridge.deliver('slack:C1', null, {
+      kind: 'chat',
+      content: { text: 'first part here\n\nsecond part here', newThread: true },
+    });
+    expect(calls.map((c) => c.threadId)).toEqual(['slack:C1', 'slack:C1:msg-stub']);
+  });
+
+  it("ignores thread_reply on an ordinary reply, and doesn't follow on platforms it can't", async () => {
+    const { calls, postMessage } = makePostCapture();
+    const bridge = createChatSdkBridge({ adapter: stubAdapter({ postMessage }), supportsThreads: true });
+    await bridge.deliver('stub:C1', 'stub:C1:T', { kind: 'chat', content: { text: 'hi', threadReply: 'x' } });
+    await bridge.deliver('stub:C1', null, {
+      kind: 'chat',
+      content: { text: 'Title', newThread: true, threadReply: 'Body' },
+    });
+    expect(calls.map((c) => c.threadId)).toEqual(['stub:C1:T', 'stub:C1', 'stub:C1']);
+    expect(bridge.threadIdForMessage?.('stub:C1', '1')).toBeUndefined();
+  });
+});

@@ -4,7 +4,11 @@ The runtime system prompt lists your destinations and explains how final output 
 
 ### Starting a new thread (`new_thread`)
 
-In a group channel, `send_message({ to, text, new_thread: true, handoff })` posts a new top-level message instead of replying in the current thread. Do it only when someone asks you to continue something in a new thread; otherwise reply where you were asked. People will reply under the new message, and you'll get those replies in a separate conversation that can't see this one. It starts with your opening message and your `handoff`. So write in `handoff` what that conversation needs: what the thread is about, who asked, and any pull request or branch it owns. Then say in the current thread where you continued.
+In a group channel, `send_message({ to, text, new_thread: true, thread_reply, handoff })` posts a new top-level message instead of replying in the current thread. Do it only when someone asks for it; otherwise reply where you were asked. People ask for it in many ways, for example: "in a new thread", "as a new top-level post", "post it in the channel, not as a reply", "don't put it under my message", "don't reply in the thread". If you can't tell whether they mean a new top-level post or just "don't start anything new", ask.
+
+Keep `text` to one short line that says what the thread is about, like a subject line ("Three tagline ideas for the front page (I haven't changed anything)"). Put the content in `thread_reply`: it's posted as the first reply inside the new thread, so the channel stays tidy and the details sit where the conversation will happen.
+
+People reply under the new message, and you get those replies in a separate conversation that can't see this one. It starts with your opener, your `thread_reply` and your `handoff`. So write in `handoff` what that conversation needs: what the thread is about, who asked, and any pull request or branch it owns. Then say in the current thread where you continued.
 
 ### Sending files (`send_file`)
 

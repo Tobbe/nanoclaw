@@ -89,6 +89,11 @@ export const sendMessage: McpToolDefinition = {
           description:
             'With new_thread: a note to yourself for the new thread (what it is about, where it came from, any pull request it owns). You read it when someone replies there.',
         },
+        thread_reply: {
+          type: 'string',
+          description:
+            'With new_thread: posted as the first reply inside the new thread, right after `text`. Use it to keep `text` a short top-level line and put the details in the thread.',
+        },
       },
       required: ['to', 'text'],
     },
@@ -98,9 +103,10 @@ export const sendMessage: McpToolDefinition = {
     const text = args.text as string;
     const newThread = args.new_thread === true;
     const handoff = typeof args.handoff === 'string' ? args.handoff.trim() : '';
+    const threadReply = typeof args.thread_reply === 'string' ? args.thread_reply.trim() : '';
     if (!to) return err(`to is required. Options: ${destinationList()}`);
     if (!text) return err('text is required');
-    if (handoff && !newThread) return err('handoff only applies with new_thread: true');
+    if ((handoff || threadReply) && !newThread) return err('handoff and thread_reply only apply with new_thread: true');
 
     const routing = resolveRouting(to);
     if ('error' in routing) return err(routing.error);
@@ -117,7 +123,11 @@ export const sendMessage: McpToolDefinition = {
       platform_id: routing.platform_id,
       channel_type: routing.channel_type,
       thread_id: newThread ? null : routing.thread_id,
-      content: JSON.stringify(newThread ? { text, newThread: true, ...(handoff ? { handoff } : {}) } : { text }),
+      content: JSON.stringify(
+        newThread
+          ? { text, newThread: true, ...(threadReply ? { threadReply } : {}), ...(handoff ? { handoff } : {}) }
+          : { text },
+      ),
     });
 
     log(`send_message: #${seq} → ${routing.resolvedName}${newThread ? ' (new thread)' : ''}`);

@@ -1219,6 +1219,20 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
             }
           }
         }
+        // The details under a new thread's short opener (send_message
+        // thread_reply). Where the platform can't open a thread from a post,
+        // they follow as a plain message rather than get lost.
+        const threadReply =
+          content.newThread === true && typeof content.threadReply === 'string'
+            ? transformText(content.threadReply)
+            : '';
+        if (threadReply && firstId) {
+          const replyChunks =
+            config.maxTextLength && threadReply.length > config.maxTextLength
+              ? splitForLimit(threadReply, config.maxTextLength)
+              : [threadReply];
+          for (const chunk of replyChunks) await adapter.postMessage(target, { markdown: chunk });
+        }
         return firstId;
       } else if (message.files && message.files.length > 0) {
         // Files only, no text

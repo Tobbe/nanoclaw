@@ -236,6 +236,23 @@ describe('send_message — new_thread', () => {
     expect(JSON.parse(row.content)).toEqual({ text: 'hi' });
   });
 
+  it('carries a thread_reply for the host to post inside the new thread', async () => {
+    await sendMessage.handler({
+      to: 'team',
+      text: 'Three tagline ideas',
+      new_thread: true,
+      thread_reply: ' 1. A\n2. B ',
+    });
+    const [row] = getUndeliveredMessages();
+    expect(JSON.parse(row.content)).toEqual({ text: 'Three tagline ideas', newThread: true, threadReply: '1. A\n2. B' });
+  });
+
+  it('refuses a thread_reply without new_thread', async () => {
+    const res = (await sendMessage.handler({ to: 'team', text: 'hi', thread_reply: 'x' })) as { isError?: boolean };
+    expect(res.isError).toBe(true);
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
   it('refuses a handoff without new_thread', async () => {
     const res = (await sendMessage.handler({ to: 'team', text: 'hi', handoff: 'x' })) as { isError?: boolean };
     expect(res.isError).toBe(true);

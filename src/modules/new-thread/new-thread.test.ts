@@ -145,6 +145,27 @@ describe('followNewThread', () => {
     expect(seeded[1].content.text).toContain('Owns PR #25.');
   });
 
+  it('also gives the thread session the details posted inside the thread', async () => {
+    await createMessagingGroupAgent(wiring());
+    await followNewThread(
+      opener({
+        text: 'Three tagline ideas',
+        newThread: true,
+        threadReply: '1. A\n2. B',
+        handoff: 'Taglines for Tobbe.',
+      }),
+      ORIGIN,
+      { firstDelivery: false, platformMessageId: '777.000' },
+    );
+    const session = await findSessionForAgent(AG, 'mg-web', 'slack:C1:777.000');
+    const seeded = rows(session!.id);
+    expect(seeded.map((r) => r.content.text)).toEqual([
+      'Three tagline ideas',
+      '1. A\n2. B',
+      expect.stringContaining('Taglines for Tobbe.'),
+    ]);
+  });
+
   it('ignores ordinary replies', async () => {
     await createMessagingGroupAgent(wiring());
     expect(

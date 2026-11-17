@@ -11,7 +11,8 @@
  *   1. subscribes the adapter to it (the platform's subscribed-message path),
  *   2. creates the thread's session, so mention-sticky engages on the first
  *      reply without an @mention (an empty inbox counts as active),
- *   3. writes the opener and the agent's handoff note into that session as
+ *   3. writes the opener (and its thread_reply, posted inside the thread by
+ *      the bridge) and the agent's handoff note into that session as
  *      trigger=0 context rows. They never wake a container and don't count as
  *      chatter; the agent reads them with the first reply.
  *
@@ -42,6 +43,7 @@ export const THREAD_HANDOFF_SURFACE = 'thread-handoff';
 interface NewThreadContent {
   text?: unknown;
   newThread?: unknown;
+  threadReply?: unknown;
   handoff?: unknown;
 }
 
@@ -96,6 +98,11 @@ export async function followNewThread(
     // races in first leaves one copy, not two.
     { id: echoRowId(msg.id, session.id), text: String(content.text ?? ''), surface: THREAD_OPENER_SURFACE },
   ];
+  // The details posted inside the thread under the opener (thread_reply).
+  const threadReply = typeof content.threadReply === 'string' ? content.threadReply.trim() : '';
+  if (threadReply) {
+    rows.push({ id: `${msg.id}:reply:${session.id}`, text: threadReply, surface: THREAD_OPENER_SURFACE });
+  }
   const handoff = typeof content.handoff === 'string' ? content.handoff.trim() : '';
   rows.push({
     id: `${msg.id}:handoff:${session.id}`,
