@@ -49,6 +49,9 @@ const GIT_LABELS: Array<[RegExp, string]> = [
   [git('branch|ls-tree|ls-files'), 'Looked at the branches and files'],
   [git('add|rm|mv|restore|stash|reset'), 'Staged changes'],
   [git('config|init|remote'), 'Set up git'],
+  [/\bgh\s+pr\s+create\b/, 'Opened a pull request'],
+  [/\bgh\s+pr\s+comment\b/, 'Commented on a pull request'],
+  [/\bgh\s+run\s+watch\b/, 'Waited for the checks'],
   [/\bgh\s+pr\b/, 'Worked on a pull request'],
   [/\bgh\s+issue\b/, 'Looked at issues'],
 ];
@@ -93,8 +96,70 @@ function hostname(url: string): string | undefined {
   }
 }
 
+/**
+ * Steps that change something, as opposed to looking around. A command that
+ * chains several (build, commit, push, open a PR, wait for CI) gets all of
+ * them in its label, in order; a chain of look-arounds keeps one label.
+ */
+const ACTION_TITLES = new Set([
+  'Ran tests',
+  'Ran a build',
+  'Installed dependencies',
+  'Cloned a repository',
+  'Committed changes',
+  'Pushed changes',
+  'Opened a pull request',
+  'Commented on a pull request',
+  'Waited for the checks',
+]);
+
+/** One step of a chain: what a single command does, or null when it's not an action. */
+function segmentAction(segment: string): string | null {
+  if (TEST_COMMAND.test(segment)) return 'Ran tests';
+  if (BUILD_COMMAND.test(segment)) return 'Ran a build';
+  if (INSTALL_COMMAND.test(segment)) return 'Installed dependencies';
+  if (!GIT_COMMAND.test(segment)) return null;
+  for (const [pattern, title] of GIT_LABELS) {
+    if (pattern.test(segment)) return ACTION_TITLES.has(title) ? title : null;
+  }
+  return null;
+}
+
+/** The actions a chained command performs, in order, without repeats. */
+function chainedActions(command: string): string[] {
+  // `a || b` runs b only when a fails: label what normally runs.
+  const usual = command.split('||')[0];
+  const actions: string[] = [];
+  for (const segment of usual.split(/&&|;|\n/)) {
+    // `git push … | tail -2`: what's after a pipe only reads the output.
+    const action = segmentAction(segment.split('|')[0]);
+    if (action && !actions.includes(action)) actions.push(action);
+  }
+  return actions;
+}
+
+/** "Committed and pushed changes, opened a pull request and waited for the checks". */
+function joinActions(actions: string[]): string {
+  const parts = [...actions];
+  const commit = parts.indexOf('Committed changes');
+  const push = parts.indexOf('Pushed changes');
+  if (commit !== -1 && push !== -1) {
+    parts[commit] = 'Committed and pushed changes';
+    parts.splice(push, 1);
+  }
+  const lower = parts.map((p, i) => (i === 0 ? p : p[0].toLowerCase() + p.slice(1)));
+  if (lower.length === 1) return lower[0];
+  const last = lower[lower.length - 1];
+  // "Ran a build, committed and pushed changes", not "… and committed and pushed …".
+  return `${lower.slice(0, -1).join(', ')}${last.includes(' and ') ? ', ' : ' and '}${last}`;
+}
+
 /** Classify a shell command into a fixed label. The command itself is never returned. */
 export function classifyCommand(command: string): StepSummary {
+  const actions = chainedActions(command);
+  if (actions.length > 1) {
+    return { title: joinActions(actions), category: actions.includes('Ran tests') ? 'test' : 'run' };
+  }
   if (TEST_COMMAND.test(command)) return { title: 'Ran tests', category: 'test' };
   if (BUILD_COMMAND.test(command)) return { title: 'Ran a build', category: 'run' };
   if (INSTALL_COMMAND.test(command)) return { title: 'Installed dependencies', category: 'run' };

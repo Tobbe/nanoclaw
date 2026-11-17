@@ -37,7 +37,8 @@ describe('summarizeStep', () => {
     expect(title('cd /tmp/site && git -C . log --oneline -5')).toBe('Looked at the history');
     expect(title('git commit -m "secret message"')).toBe('Committed changes');
     expect(title('git push origin main')).toBe('Pushed changes');
-    expect(title('gh pr create --fill')).toBe('Worked on a pull request');
+    expect(title('gh pr create --fill')).toBe('Opened a pull request');
+    expect(title('gh pr view 20 --json files')).toBe('Worked on a pull request');
     expect(title('git config user.name CodeBot')).toBe('Set up git');
     // A fallback after || only runs when the first part fails.
     expect(
@@ -56,6 +57,27 @@ describe('summarizeStep', () => {
     expect(title('mkdir -p out && cp a b')).toBe('Organised files');
     expect(title('python3 scripts/build_index.py')).toBe('Ran a script');
     expect(title('echo hi')).toBe('Ran a command');
+  });
+
+  it('lists every action in a chained command, in order', () => {
+    const title = (c: string) => classifyCommand(c).title;
+    // What CodeBot runs after a change: one command, four things done.
+    expect(
+      title(
+        'export GH_TOKEN=x && git add -A && git commit -q -m "m" && git push -q -u origin b 2>&1|tail -1\n' +
+          'gh pr create -R o/r --base main --head b --title t --body "b"\n' +
+          'sha=$(git rev-parse HEAD); sleep 15\n' +
+          'for id in $(gh run list -R o/r --branch b); do\n gh run watch "$id" -R o/r --exit-status >/dev/null && echo ok; done',
+      ),
+    ).toBe('Committed and pushed changes, opened a pull request and waited for the checks');
+    expect(title('yarn build 2>&1 | grep error; git add -A && git commit -m x && git push')).toBe(
+      'Ran a build, committed and pushed changes',
+    );
+    expect(classifyCommand('pnpm test && git commit -m x')).toEqual({ title: 'Ran tests and committed changes', category: 'test' });
+    // A failure fallback isn't a step that normally runs.
+    expect(title('git fetch && git checkout b || git clone https://x/y.git')).toBe('Pulled the latest changes');
+    // Look-arounds chained together keep one label.
+    expect(title('cat AGENTS.md; git status --short; git branch -a; git log --oneline')).toBe('Checked what changed');
   });
 
   it('uses the model description for Bash only in detailed mode', () => {
