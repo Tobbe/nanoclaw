@@ -473,8 +473,9 @@ themselves are never shown.
 
 - **`chat`** — one `<message>` per row:
   ```xml
-  <message id="5" from="family" sender="John" time="Jan 1, 10:00 AM">Check this PR</message>
+  <message id="5" from="family" sender="John" sender_id="U0123ABCD" time="Jan 1, 10:00 AM">Check this PR</message>
   ```
+  `sender_id` is the sender's platform user id (`senderId`, else `author.userId`), omitted when the row has none.
   A reply carries a `reply_to` attribute and an inline `<quoted_message from="…">…</quoted_message>`.
 
 - **`chat-sdk`** — same `<message>` shape, fields extracted from the serialized Chat SDK

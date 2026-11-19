@@ -36,6 +36,8 @@ Check your group folder name or workspace path:
 <!channel>                           # @channel
 ```
 
+To mention a person, use the `sender_id` from one of their `<message>` tags: `<@U0C0Y14JRC0>`. Never write `@Name` or `<@Name>`: Slack only resolves user ids, so a name shows up as plain text and nobody is notified. If you don't have the person's id, write their name without `@`.
+
 ### Lists
 
 Slack supports simple bullet lists but NOT numbered lists:

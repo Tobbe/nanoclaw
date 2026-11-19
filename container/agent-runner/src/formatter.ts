@@ -262,6 +262,11 @@ function formatSingleChat(msg: MessageInRow): string {
   if (isSessionEcho(msg)) return formatEchoMessage(msg);
   const content = parseContent(msg.content);
   const sender = content.sender || content.author?.fullName || content.author?.userName || 'Unknown';
+  // The sender's platform user id (e.g. Slack's U…), so the agent can mention
+  // them exactly (`<@U…>` on Slack) instead of by a name the platform may not
+  // resolve.
+  const senderId: unknown = content.senderId || content.author?.userId;
+  const senderIdAttr = senderId ? ` sender_id="${escapeXml(String(senderId))}"` : '';
   const time = formatLocalTime(msg.timestamp, TIMEZONE);
   const text = content.text || '';
   const idAttr = msg.seq != null ? ` id="${msg.seq}"` : '';
@@ -273,7 +278,7 @@ function formatSingleChat(msg: MessageInRow): string {
 
   const fromAttr = originAttr(msg);
 
-  return `<message${idAttr}${fromAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${linksSuffix}${attachmentsSuffix}${appContextSuffix}</message>`;
+  return `<message${idAttr}${fromAttr} sender="${escapeXml(sender)}"${senderIdAttr} time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${linksSuffix}${attachmentsSuffix}${appContextSuffix}</message>`;
 }
 
 /**

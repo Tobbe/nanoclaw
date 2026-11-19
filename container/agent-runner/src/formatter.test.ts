@@ -263,6 +263,32 @@ describe('XML escaping', () => {
   });
 });
 
+describe('sender_id', () => {
+  it('renders the sender platform id from senderId', () => {
+    insertMessage('m1', 'chat', { sender: 'Lise', senderId: 'U0C0Y14JRC0', text: 'hi' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('sender="Lise" sender_id="U0C0Y14JRC0"');
+  });
+
+  it('falls back to author.userId for chat-sdk content', () => {
+    insertMessage('m1', 'chat-sdk', { author: { fullName: 'Lise', userId: 'U0C0Y14JRC0' }, text: 'hi' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('sender_id="U0C0Y14JRC0"');
+  });
+
+  it('escapes the id', () => {
+    insertMessage('m1', 'chat', { sender: 'X', senderId: 'a"<b>', text: 'hi' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('sender_id="a&quot;&lt;b&gt;"');
+  });
+
+  it('is absent when there is no id', () => {
+    insertMessage('m1', 'chat', { sender: 'John', text: 'hi' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).not.toContain('sender_id=');
+  });
+});
+
 describe('stripInternalTags', () => {
   it('strips single-line internal tags and trims', () => {
     expect(stripInternalTags('hello <internal>secret</internal> world')).toBe('hello  world');
