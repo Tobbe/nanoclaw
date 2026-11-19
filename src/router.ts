@@ -587,6 +587,30 @@ async function inboxWakeEvidence(agentGroupId: string, sessionId: string): Promi
   }
 }
 
+/**
+ * Whether an engaged message shows the typing indicator. An always-on
+ * wiring (pattern ".") wakes the agent for every message, most of them
+ * people talking to each other, and "typing" under each one would claim them
+ * all. There it shows only for a message that mentions the bot, or one in a
+ * thread the agent has already replied in. Every other wiring engages only
+ * on messages meant for the agent, so it always shows.
+ */
+async function showsTyping(agent: MessagingGroupAgent, event: InboundEvent, session: Session): Promise<boolean> {
+  if (agent.engage_mode !== 'pattern' || (agent.engage_pattern ?? '.') !== '.') return true;
+  if (event.message.isMention === true) return true;
+  if (event.message.addressedElsewhere === true) return false;
+  try {
+    return (
+      (await withExistingMailboxSession(session.agent_group_id, session.id, (mailbox) => mailbox.hasThreadReply())) ??
+      false
+    );
+    // eslint-disable-next-line no-catch-all/no-catch-all -- typing is best-effort and must not drop the message
+  } catch (err) {
+    log.warn('typing: could not read session outbox, not showing typing', { sessionId: session.id, err });
+    return false;
+  }
+}
+
 async function deliverToAgent(
   agent: MessagingGroupAgent,
   agentGroup: AgentGroup,
@@ -730,14 +754,16 @@ async function deliverToAgent(
     // Typing indicator + wake are only for the engaged branch; accumulated
     // messages sit silently until a real trigger fires.
     // Typing fires via the adapter instance that owns this chat's row.
-    startTypingRefresh(
-      session.id,
-      session.agent_group_id,
-      event.channelType,
-      event.platformId,
-      effectiveThreadId,
-      mg.instance,
-    );
+    if (await showsTyping(agent, event, session)) {
+      startTypingRefresh(
+        session.id,
+        session.agent_group_id,
+        event.channelType,
+        event.platformId,
+        effectiveThreadId,
+        mg.instance,
+      );
+    }
     const freshSession = await getSession(session.id);
     if (freshSession) {
       const woke = await requestWake(freshSession, 'inbound-message');
