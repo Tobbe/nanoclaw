@@ -1803,6 +1803,23 @@ describe('deliver — Slack files with their text as one message', () => {
     expect(calls).toEqual([{ threadId: 'slack:C1', message: { markdown: 'Announcement', files } }]);
   });
 
+  it('resolves @name mentions in the caption the way postMessage does', async () => {
+    const { postMessage } = makePostCapture();
+    const { adapter, uploads } = slackWithUploads(postMessage);
+    const threads: string[] = [];
+    (adapter as unknown as Record<string, unknown>).resolveOutgoingMentions = async (
+      text: string,
+      threadId: string,
+    ) => {
+      threads.push(threadId);
+      return text.replace('@Tobbe', '<@U0C01LWAHSS>');
+    };
+    const bridge = createChatSdkBridge({ adapter, supportsThreads: true });
+    await bridge.deliver('slack:C1', 'slack:C1:111.000', { kind: 'chat', content: { text: '@Tobbe done' }, files });
+    expect(uploads[0]).toMatchObject({ initial_comment: '<@U0C01LWAHSS> done' });
+    expect(threads).toEqual(['slack:C1:111.000']);
+  });
+
   it('falls back to two posts when the caption is too long', async () => {
     const { calls, postMessage } = makePostCapture();
     const { adapter, uploads } = slackWithUploads(postMessage);

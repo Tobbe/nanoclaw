@@ -105,13 +105,20 @@ async function postSlackFilesWithCaption(
     getToken?(): Promise<string>;
     decodeThreadId(id: string): { channel: string; threadTs: string };
     formatConverter?: { toResponseUrlText?(message: { markdown: string }): string };
+    resolveOutgoingMentions?(text: string, threadId: string): Promise<string>;
   };
   const upload = slack._client?.files?.uploadV2;
   const toMrkdwn = slack.formatConverter?.toResponseUrlText;
   if (!upload || !toMrkdwn || !slack.getToken) return undefined;
+  // Resolve @name mentions to <@U…> the way the adapter's postMessage does.
+  // Without it the renderer below wraps an unresolved @Name as a literal
+  // <@Name>, which Slack shows as text and which notifies nobody.
+  const resolved = slack.resolveOutgoingMentions
+    ? await slack.resolveOutgoingMentions.call(slack, markdown, target)
+    : markdown;
   // Captions take Slack's mrkdwn, not markdown: the adapter's response_url
   // renderer converts to it.
-  const caption = toMrkdwn.call(slack.formatConverter, { markdown });
+  const caption = toMrkdwn.call(slack.formatConverter, { markdown: resolved });
   if (caption.length > SLACK_CAPTION_MAX) return undefined;
   const { channel, threadTs } = slack.decodeThreadId(target);
   await upload.call(slack._client!.files, {
