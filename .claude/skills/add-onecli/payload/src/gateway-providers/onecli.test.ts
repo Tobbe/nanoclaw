@@ -38,6 +38,14 @@ vi.mock('@onecli-sh/sdk', () => ({
     }
   },
 }));
+// onecli.ts reads these from process.env before .env, at import. Clear them so
+// a shell that sets one (Claude Code sets ANTHROPIC_BASE_URL) can't override
+// the .env stub below.
+vi.hoisted(() => {
+  for (const name of ['ONECLI_URL', 'ONECLI_API_KEY', 'ONECLI_GATEWAY_CONTAINER', 'ANTHROPIC_BASE_URL']) {
+    vi.stubEnv(name, '');
+  }
+});
 // Per run, so parallel runs never share one data directory.
 const { ADAPTER_DATA } = vi.hoisted(() => ({
   ADAPTER_DATA: `/tmp/nanoclaw-onecli-adapter-${process.pid}-${Date.now()}`,
