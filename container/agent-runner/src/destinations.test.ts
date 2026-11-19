@@ -122,6 +122,7 @@ describe('buildSystemPromptAddendum — reading messages', () => {
     expect(prompt).toContain('<dm-history>');
     expect(prompt).toContain('`sender="you"` marks your own');
     expect(prompt).toContain('ask.');
+    expect(prompt).toContain("`sender_id` is the sender's platform user id");
     expect(prompt.indexOf('## Sending messages')).toBeLessThan(prompt.indexOf('## Reading messages'));
   });
 
