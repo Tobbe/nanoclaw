@@ -271,27 +271,30 @@ describe('extendTool — fixture extension of create_agent (end to end)', () => 
 
   it('extends the real create_agent schema/description and passes params into its payload', async () => {
     // What an installed feature module would run at import time instead of
-    // editing agents.ts (fixture values — the real extension ships with the
-    // feature payload, never on trunk).
+    // editing agents.ts. The property name is fixture-only: module state is
+    // process-wide, and an installed module (e.g. the Slack agent flow's
+    // rooms.ts) may already have extended create_agent with real params such
+    // as `purpose` when its tests share this process, so a real name would
+    // collide and the assertions can't assume the base schema.
     extendTool('create_agent', {
       properties: {
-        purpose: { type: 'string', description: 'One short public line saying what this agent is for.' },
+        fixture_tagline: { type: 'string', description: 'Fixture: one short public line about this agent.' },
       },
-      passthroughKeys: ['purpose'],
-      descriptionSuffix: 'The purpose line is shown publicly.',
+      passthroughKeys: ['fixture_tagline'],
+      descriptionSuffix: 'The fixture tagline is shown publicly.',
     });
 
     const props = schemaProps(createAgent);
-    expect(Object.keys(props).sort()).toEqual(['instructions', 'name', 'purpose', 'template']);
-    expect(createAgent.tool.description?.endsWith('The purpose line is shown publicly.')).toBe(true);
+    expect(Object.keys(props)).toEqual(expect.arrayContaining(['instructions', 'name', 'template', 'fixture_tagline']));
+    expect(createAgent.tool.description?.endsWith('The fixture tagline is shown publicly.')).toBe(true);
 
-    await createAgent.handler({ name: 'Scout', purpose: 'Deep research' });
+    await createAgent.handler({ name: 'Scout', fixture_tagline: 'Deep research' });
 
     const payload = lastPayload();
     expect(payload.action).toBe('create_agent');
     expect(payload.name).toBe('Scout');
     expect(payload.instructions).toBeNull();
-    expect(payload.purpose).toBe('Deep research');
+    expect(payload.fixture_tagline).toBe('Deep research');
   });
 
   it('omits extension keys from the payload when the caller does not pass them', async () => {
@@ -301,6 +304,6 @@ describe('extendTool — fixture extension of create_agent (end to end)', () => 
 
     const payload = lastPayload();
     expect(payload.name).toBe('Plain');
-    expect(payload).not.toHaveProperty('purpose');
+    expect(payload).not.toHaveProperty('fixture_tagline');
   });
 });
