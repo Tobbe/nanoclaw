@@ -25,5 +25,6 @@ import './permissions/index.js';
 import './agent-to-agent/index.js';
 import './self-mod/index.js';
 import './run-progress/index.js';
+import './thread-records/index.js';
 import './community-portal/index.js';
 import './new-thread/index.js';

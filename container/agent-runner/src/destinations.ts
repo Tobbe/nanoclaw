@@ -86,6 +86,9 @@ function buildReadingSection(): string {
     '',
     '- `<message>` — the message you are answering. `<dm-history>` and `<channel-history>` are this thread\'s own earlier timeline. One marked `answered="in its own thread"` started a thread you already replied in: it\'s done, so don\'t answer it again.',
     '- `<cross-session-context>` — a copy of something from elsewhere in this conversation: another thread, or a message you or a scheduled task posted here. Its `from` says where; `sender="you"` marks your own. If you can\'t tell whether the current message refers to it or to this thread, ask.',
+    '- `<channel-threads>` — the records of the other threads in this conversation, newest first: what each discussed, what was decided, and what is still open and on whom. Each is headed by its session id. They are summaries; for the exact words open the thread with `ncl sessions history <id>`.',
+    '',
+    'You took part in every thread here, so answer like someone who followed them all. For "what did we say about X?", "what is still open?" or "do I owe anyone an answer?", check `<channel-threads>` (or `ncl sessions records`) and read the threads that matter. To find something no record covers, use `ncl sessions search --query "<words>"`: it matches words as written, so give both languages and synonyms (e.g. "farve farver color colour"). Never say you can\'t see the other threads.',
     '',
     "A `<message>`'s `sender_id` is the sender's platform user id. To mention someone on Slack, write `<@` + their `sender_id` + `>`, e.g. `<@U0123ABCD>`; never `@Name` or `<@Name>`, which Slack shows as plain text and which notify nobody.",
   ].join('\n');

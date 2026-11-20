@@ -76,6 +76,29 @@ over untouched (see [provider-migration.md](provider-migration.md)).
 | Durable facts, people, projects, decisions | `memory/` |
 | Role, persona, standing behavior instructions | `/workspace/agent/instructions.prepend.md` |
 | Past session transcripts | `conversations/` in the workspace |
+| What each thread discussed, decided, and left open | Thread records (below) |
+
+## Thread records
+
+Memory holds durable facts. What happened in each conversation thread lives in
+thread records instead. After every answered turn in a chat thread, the runner
+asks a small model (Haiku) to fold the turn into that thread's record: a title,
+one line per topic in the order they came up (what was asked, decided or done,
+with PR numbers and links), and what is still open and on whom. Finished topics
+stay in the record, so a thread that moved on is still findable by its earlier
+subjects (`container/agent-runner/src/thread-record.ts`;
+`NANOCLAW_THREAD_RECORDS=off` turns it off).
+
+The runner sends each record to the host as a `thread_record` system action;
+the host keeps the newest per session (`thread_records`, central DB). A new
+thread starts with the records of its conversation's other threads from the
+last 60 days, rendered as `<channel-threads>`. Only records from the same
+messaging group are shared, so a channel never sees a DM's threads.
+
+The agent can also run `ncl sessions records` for a fresh copy, and
+`ncl sessions search --query "<words>"` to find where something was said in any
+of its conversations (messages and records; word-start matches, so it searches
+in both languages with synonyms). `ncl sessions history <id>` opens a thread.
 
 ## Migrating older memory
 

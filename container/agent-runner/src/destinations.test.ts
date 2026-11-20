@@ -123,6 +123,9 @@ describe('buildSystemPromptAddendum — reading messages', () => {
     expect(prompt).toContain('`sender="you"` marks your own');
     expect(prompt).toContain('ask.');
     expect(prompt).toContain("`sender_id` is the sender's platform user id");
+    expect(prompt).toContain('`<channel-threads>`');
+    expect(prompt).toContain('ncl sessions search --query');
+    expect(prompt).toContain("Never say you can't see the other threads.");
     expect(prompt.indexOf('## Sending messages')).toBeLessThan(prompt.indexOf('## Reading messages'));
   });
 

@@ -303,6 +303,11 @@ function formatEchoMessage(msg: MessageInRow): string {
   if (content.echo?.surface === 'thread-handoff') {
     return `<thread-handoff time="${escapeXml(time)}">${escapeXml(content.text || '')}</thread-handoff>`;
   }
+  // The records of this conversation's other threads (thread-record.ts),
+  // written by the host into a new thread: what was discussed where.
+  if (content.echo?.surface === 'thread-records') {
+    return `<channel-threads>\n${escapeXml(content.text || '')}\n</channel-threads>`;
+  }
   if (content.echo?.surface === 'dm-timeline' || content.echo?.surface === 'channel-timeline') {
     const tag = content.echo.surface === 'channel-timeline' ? 'channel-history' : 'dm-history';
     // A thread opener you already replied to in its own thread: the reply

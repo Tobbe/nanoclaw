@@ -5,6 +5,13 @@ import {
   sessionHistory,
   type HistoryRow,
 } from '../../modules/cross-session-context/index.js';
+import {
+  formatSearchHits,
+  SEARCH_DEFAULT_LIMIT,
+  sessionRecords,
+  sessionSearch,
+  type SearchHit,
+} from '../../modules/cross-session-context/search.js';
 import { registerResource } from '../crud.js';
 
 registerResource({
@@ -95,6 +102,43 @@ registerResource({
       // Self-scoped in the handler, like history.
       handler: async (args, ctx) => await sessionFile(args, ctx),
       formatHuman: (data) => `Saved to ${(data as { path: string }).path}`,
+    },
+    search: {
+      access: 'open',
+      description:
+        "Search everything said in all your conversations: every thread's messages (in and out) and every thread record. " +
+        'Matches any of the words (case-insensitive, word starts: "farve" also finds "farver"); more words matched rank higher, then newer. ' +
+        'Words only match as written, so search in both languages and with synonyms ("farve farver color colour"). ' +
+        'Each hit names its session; open the whole thread with `ncl sessions history <id>`.',
+      examples: [
+        `# Where did we talk about button colours?\nncl sessions search --query "farve farver color colour knap button"`,
+      ],
+      args: [
+        { name: 'query', type: 'string', description: 'Words to look for, in any language.', required: true },
+        {
+          name: 'limit',
+          type: 'number',
+          description: `Max hits (default ${SEARCH_DEFAULT_LIMIT}).`,
+          default: SEARCH_DEFAULT_LIMIT,
+        },
+        { name: 'group', type: 'string', description: 'Agent group id (host only; agents search their own).' },
+      ],
+      // Self-scoped in the handler, like history.
+      handler: async (args, ctx) => await sessionSearch(args, ctx),
+      formatHuman: (data) => formatSearchHits(data as SearchHit[]),
+    },
+    records: {
+      access: 'open',
+      description:
+        'The records of the other threads in this conversation, newest first: what each thread discussed, what was decided, ' +
+        'and what is still open and on whom. A new thread gets these at its start; run this for a fresh copy.',
+      examples: [`ncl sessions records`],
+      args: [
+        { name: 'group', type: 'string', description: 'Agent group id (host only).' },
+        { name: 'conversation', type: 'string', description: 'Messaging group id (host only).' },
+      ],
+      handler: async (args, ctx) => await sessionRecords(args, ctx),
+      formatHuman: (data) => String(data),
     },
   },
 });

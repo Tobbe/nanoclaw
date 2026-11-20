@@ -35,6 +35,7 @@ import { isUploadTraceCommand, uploadTrace } from './upload-trace.js';
 import type { AgentProvider, AgentQuery, ProviderEvent, ProviderExchange } from './providers/types.js';
 import type { ProviderRuntimeContract } from './provider-contracts/registry.js';
 import { RUN_PROGRESS_ACTION, RunProgressSink, stopRunId, type RunProgressWrite } from './progress/sink.js';
+import { THREAD_RECORD_ACTION, ThreadRecorder, summarizeWithClaude } from './thread-record.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -676,6 +677,7 @@ export async function processQuery(
           // <message> block was delivered this turn. If a reply already went
           // out as a block, the unwrapped tail stays in the scratchpad log.
           const willRetryWrapping = !failed && hasUnwrapped && !unwrappedNudged;
+          if (!failed) noteThreadRecord(routing, archivePrompts[0] ?? initialPrompt, archivedResult);
           notifyExchangeComplete(onExchangeComplete, {
             prompt: archivePrompts[0] ?? initialPrompt,
             result: archivedResult,
@@ -813,6 +815,36 @@ const writeRunProgress: RunProgressWrite = async (snapshot, target) => {
     }),
   });
 };
+
+let threadRecorder: ThreadRecorder | null = null;
+
+/**
+ * Fold an answered chat turn into this thread's record (thread-record.ts),
+ * in the background. Chat threads only: task runs and agent-to-agent turns
+ * have no channel to share a record with. `NANOCLAW_THREAD_RECORDS=off`
+ * disables it.
+ */
+function noteThreadRecord(routing: RoutingContext, prompt: string, result: string | null): void {
+  if (process.env.NANOCLAW_THREAD_RECORDS === 'off') return;
+  if (routing.taskRun || !routing.platformId || !routing.channelType || routing.channelType === 'agent') return;
+  const target = { platformId: routing.platformId, channelType: routing.channelType, threadId: routing.threadId };
+  threadRecorder ??= new ThreadRecorder({ summarize: summarizeWithClaude, send: (record) => writeThreadRecord(record, target), log });
+  void threadRecorder.note(prompt, result);
+}
+
+async function writeThreadRecord(
+  record: string,
+  target: { platformId: string; channelType: string; threadId: string | null },
+): Promise<void> {
+  await writeMessageOut({
+    id: generateId(),
+    kind: 'system',
+    platform_id: target.platformId,
+    channel_type: target.channelType,
+    thread_id: target.threadId,
+    content: JSON.stringify({ action: THREAD_RECORD_ACTION, record }),
+  });
+}
 
 /** On by default; `NANOCLAW_RUN_PROGRESS=off` disables it for a container. */
 function createRunProgressSink(): RunProgressSink {

@@ -190,6 +190,22 @@ describe('formatter rendering', () => {
     expect(result).not.toContain('<cross-session-context');
   });
 
+  it('renders the records of the other threads as one <channel-threads> block', () => {
+    insertMessage(
+      'records',
+      'chat',
+      {
+        text: '[20 Nov 14:48 · sess-1]\nButtons\n- Colour: navy <default>',
+        self: true,
+        echo: { surface: 'thread-records', label: 'records' },
+      },
+      { trigger: 0, channelType: 'session-echo' },
+    );
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('<channel-threads>\n[20 Nov 14:48 · sess-1]\nButtons\n- Colour: navy &lt;default&gt;\n</channel-threads>');
+    expect(result).not.toContain('<cross-session-context');
+  });
+
   it('XML-escapes label, sender, and text', () => {
     insertEcho('e1', { text: '<b>&"hi"</b>', sender: 'A & B', label: 'DM with <Gavriel>' });
 

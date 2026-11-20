@@ -53,3 +53,12 @@ export {
   type HistoryRow,
 } from './history.js';
 export { backfillSession, BACKFILL_LIMIT, type BackfillOptions } from './backfill.js';
+export {
+  formatThreadRecords,
+  listGroupThreadRecords,
+  listThreadRecords,
+  saveThreadRecord,
+  seedThreadRecords,
+  THREAD_RECORDS_SURFACE,
+  type ThreadRecordRow,
+} from './thread-records.js';
