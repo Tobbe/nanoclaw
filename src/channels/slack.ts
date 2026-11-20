@@ -19,7 +19,7 @@ import { createSlackAdapter, type SlackAdapter } from '@chat-adapter/slack';
 import { readEnvFile } from '../env.js';
 import type { ChannelAdapter, ChannelContextDefaults, ChannelDefaults } from './adapter.js';
 import { createChatSdkBridge } from './chat-sdk-bridge.js';
-import { slackMentionsUsers } from './slack-mentions.js';
+import { resolveSlackMentions, slackMentionsUsers, type MentionablePerson } from './slack-mentions.js';
 import { registerChannelAdapter } from './channel-registry.js';
 import { setSlackAuthorIsBotResolver } from './slack-a2a-guard.js';
 import { slackRawTextExtractor } from './slack-raw-text.js';
@@ -139,6 +139,22 @@ export async function slackAuthorIsBot(slackAdapter: SlackAdapter, userId: strin
   return user?.isBot ?? null;
 }
 
+/**
+ * The people in a Slack thread, for resolving `@Name`: everyone the adapter
+ * saw post there (its participant list), with their names from its cached
+ * users.info. Bots are left out.
+ */
+export async function slackThreadPeople(slackAdapter: SlackAdapter, threadId: string): Promise<MentionablePerson[]> {
+  const chat = (slackAdapter as unknown as { chat?: { getState(): { getList<T>(key: string): Promise<T[]> } } | null })
+    .chat;
+  if (!chat) return [];
+  const ids = await chat.getState().getList<string>(`slack:thread-participants:${threadId}`);
+  const users = await Promise.all([...new Set(ids)].map((id) => slackAdapter.getUser(id)));
+  return users
+    .filter((u): u is NonNullable<typeof u> => Boolean(u && !u.isBot))
+    .map((u) => ({ id: u.userId, userName: u.userName, fullName: u.fullName }));
+}
+
 /** Construction knobs for one Slack bot identity. */
 export interface SlackBridgeOptions {
   /**
@@ -191,6 +207,8 @@ export function createSlackBridge(options: SlackBridgeOptions = {}): ChannelAdap
     adapter: slackAdapter,
     extractRawText: slackRawTextExtractor(slackAdapter),
     mentionsUsers: slackMentionsUsers,
+    resolveMentions: async (text, threadId) =>
+      text.includes('@') ? resolveSlackMentions(text, await slackThreadPeople(slackAdapter, threadId)) : text,
     // "Typing…" is the assistant thread status; it stays until the bot posts
     // or the status is set to empty.
     clearTyping: async (threadId) => {

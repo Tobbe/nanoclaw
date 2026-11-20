@@ -464,6 +464,12 @@ export interface ChatSdkBridgeConfig {
    */
   transformOutboundText?: (text: string) => string;
   /**
+   * Optional async pass over an outgoing message's text, after
+   * transformOutboundText, with the thread it goes to. Slack uses it to turn
+   * `@Name` into real mentions of the people in that thread.
+   */
+  resolveMentions?: (text: string, threadId: string) => Promise<string>;
+  /**
    * Optional escape for host-built ask_question card text (open and resolved
    * cards). Approval cards mix host wording with untrusted values (agent
    * arguments, sender names); channels whose card text is raw platform markup
@@ -767,6 +773,15 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
     );
   }
   const transformText = (t: string): string => (config.transformOutboundText ? config.transformOutboundText(t) : t);
+  const resolveMentions = async (t: string, threadId: string): Promise<string> => {
+    if (!config.resolveMentions || !t) return t;
+    try {
+      return await config.resolveMentions(t, threadId);
+    } catch (err) {
+      log.warn('Mention resolution failed, sending text as is', { err });
+      return t;
+    }
+  };
   const cardText = (t: string): string => (config.escapeCardText ? config.escapeCardText(t) : t);
   const terminalMessage = ({ fromAgent, ...spec }: TerminalApprovalCard) => {
     const questionText = fromAgent ? (t: string) => t : cardText;
@@ -1171,7 +1186,10 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
           await adapter.editMessage(tid, content.messageId as string, terminalMessage({ title, question, resolution }));
         } else {
           await adapter.editMessage(tid, content.messageId as string, {
-            markdown: transformText((content.text as string) || (content.markdown as string) || ''),
+            markdown: await resolveMentions(
+              transformText((content.text as string) || (content.markdown as string) || ''),
+              tid,
+            ),
           });
         }
         return;
@@ -1253,7 +1271,7 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
 
       // Normal message
       const rawText = (content.markdown as string) || (content.text as string);
-      const text = rawText ? transformText(rawText) : rawText;
+      const text = rawText ? await resolveMentions(transformText(rawText), tid) : rawText;
       if (text) {
         // Attach files if present (FileUpload format: { data, filename })
         const fileUploads = message.files?.map((f: { data: Buffer; filename: string }) => ({
@@ -1270,7 +1288,9 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
         let target = tid;
         const opensThread = content.newThread === true && threadId === null;
         const threadReply =
-          opensThread && typeof content.threadReply === 'string' ? transformText(content.threadReply) : '';
+          opensThread && typeof content.threadReply === 'string'
+            ? await resolveMentions(transformText(content.threadReply), tid)
+            : '';
         // With details for inside the thread, the files go there with them
         // (Slack uploads files as their own message, so on a short opener
         // they'd sit top-level beside it). Without, they stay with the post.

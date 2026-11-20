@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { slackMentionsUsers } from './slack-mentions.js';
+import { resolveSlackMentions, slackMentionsUsers } from './slack-mentions.js';
 
 describe('slackMentionsUsers', () => {
   it('sees user mentions', () => {
@@ -13,5 +13,39 @@ describe('slackMentionsUsers', () => {
     expect(slackMentionsUsers({ text: '<!here>' })).toBe(false);
     expect(slackMentionsUsers({ text: 'email me @ tobbe' })).toBe(false);
     expect(slackMentionsUsers({})).toBe(false);
+  });
+});
+
+describe('resolveSlackMentions', () => {
+  const people = [
+    { id: 'U0LISE0001', userName: 'Lise Engelbrecht', fullName: 'Lise Engelbrecht' },
+    { id: 'U0TOBBE001', userName: 'Tobbe', fullName: 'Tobbe Lundberg' },
+  ];
+  const plain = (name: string) => `@⁠${name}`;
+
+  it('takes a whole name when it matches one', () => {
+    expect(resolveSlackMentions('@Lise Engelbrecht, dine tre rettelser', people)).toBe(
+      '<@U0LISE0001>, dine tre rettelser',
+    );
+    expect(resolveSlackMentions('Forstået @tobbe lundberg.', people)).toBe('Forstået <@U0TOBBE001>.');
+  });
+
+  it('takes a display name or a first name only one person has', () => {
+    expect(resolveSlackMentions('@Tobbe and @Lise', people)).toBe('<@U0TOBBE001> and <@U0LISE0001>');
+  });
+
+  it('keeps a raw id mention and links a bare id', () => {
+    expect(resolveSlackMentions('<@U0LISE0001> and @U0TOBBE001', people)).toBe('<@U0LISE0001> and <@U0TOBBE001>');
+  });
+
+  it('leaves a name it cannot place as plain text, never <@Name>', () => {
+    expect(resolveSlackMentions('@Mads and @channel', people)).toBe(`${plain('Mads')} and ${plain('channel')}`);
+    const twoLises = [...people, { id: 'U0LISE0002', fullName: 'Lise Hansen' }];
+    expect(resolveSlackMentions('@Lise', twoLises)).toBe(plain('Lise'));
+  });
+
+  it('leaves code, links, tokens and e-mail addresses alone', () => {
+    const text = 'mail lise@effibo.dk, see `@Lise` and https://x.com/@Lise or <https://a.b|@Lise>';
+    expect(resolveSlackMentions(text, people)).toBe(text);
   });
 });
