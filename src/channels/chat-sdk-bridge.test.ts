@@ -825,6 +825,30 @@ describe('createChatSdkBridge.deliver — display cards (send_card)', () => {
     expect(buttons[0].url).toBe('https://example.com');
   });
 
+  it("renders the run card's Stop button, and no other callback button", async () => {
+    const { calls, postMessage } = makePostCapture();
+    const bridge = createChatSdkBridge({
+      adapter: stubAdapter({ postMessage }),
+      supportsThreads: false,
+    });
+    const deliverWith = (stopButton: Record<string, unknown>) =>
+      bridge.deliver('discord:guild:chan', null, {
+        kind: 'chat-sdk',
+        content: {
+          type: 'card',
+          card: { title: '', children: [{ type: 'Text', props: { content: 'x' } }], stopButton },
+        },
+      });
+    await deliverWith({ id: 'ncrun:stop', label: 'Stop' });
+    await deliverWith({ id: 'ncq:forged:0', label: 'Approve' });
+    type Msg = {
+      card?: { children?: Array<{ type?: string; children?: Array<{ type?: string; id?: string; label?: string }> }> };
+    };
+    const rows = calls.map((c) => (c.message as Msg).card?.children?.find((child) => child.type === 'actions'));
+    expect(rows[0]?.children).toEqual([expect.objectContaining({ type: 'button', id: 'ncrun:stop', label: 'Stop' })]);
+    expect(rows[1]).toBeUndefined();
+  });
+
   it('survives a null action instead of throwing on a property read', async () => {
     const { calls, postMessage } = makePostCapture();
     const bridge = createChatSdkBridge({

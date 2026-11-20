@@ -84,6 +84,8 @@ interface Card {
   renderedSeq: number;
   renderedFinal: boolean;
   interrupted: boolean;
+  /** Who pressed Stop on the card; the card is final from then on. */
+  stoppedBy?: string;
   backoffUntil: number;
   notRunningSince?: number;
   finalAttempts: number;
@@ -125,7 +127,7 @@ export class RunCardManager {
     if (this.finished.has(key)) return;
     const existing = this.cards.get(key);
     if (existing) {
-      if (snapshot.seq <= existing.snapshot.seq || existing.renderedFinal) return;
+      if (snapshot.seq <= existing.snapshot.seq || existing.renderedFinal || existing.stoppedBy !== undefined) return;
       existing.snapshot = snapshot;
       existing.notRunningSince = undefined;
       return;
@@ -202,6 +204,22 @@ export class RunCardManager {
   }
 
   /**
+   * Someone pressed Stop on the card posted as `messageId`. The card turns
+   * final at once ("Stopped by …") and ignores the run's later snapshots.
+   * Returns the run it stopped, or null when that message is not an open
+   * run card (already finished, or not a run card at all).
+   */
+  stop(messageId: string, by: string): { sessionId: string; runId: string } | null {
+    const card = [...this.cards.values()].find((c) => c.messageId === messageId);
+    if (!card || card.renderedFinal || card.stoppedBy !== undefined) return null;
+    if (card.interrupted || isFinal(card.snapshot.status)) return null;
+    card.stoppedBy = by;
+    card.backoffUntil = 0;
+    if (!card.inFlight) void this.run({ card, kind: 'final' });
+    return { sessionId: card.sessionId, runId: card.snapshot.runId };
+  }
+
+  /**
    * One scheduling pass. Starts at most `maxOpsPerTick` platform calls and
    * resolves when they settle (the host's interval doesn't wait on it).
    */
@@ -218,7 +236,7 @@ export class RunCardManager {
   }
 
   private checkLiveness(card: Card, now: number): void {
-    if (card.interrupted || isFinal(card.snapshot.status)) return;
+    if (card.interrupted || card.stoppedBy !== undefined || isFinal(card.snapshot.status)) return;
     if (this.deps.isContainerRunning(card.sessionId)) {
       card.notRunningSince = undefined;
       return;
@@ -228,7 +246,7 @@ export class RunCardManager {
   }
 
   private nextOp(card: Card, now: number): Op | null {
-    const final = card.interrupted || isFinal(card.snapshot.status);
+    const final = card.interrupted || card.stoppedBy !== undefined || isFinal(card.snapshot.status);
     if (!card.messageId) {
       if (card.inFlight) return null;
       // Never posted and already over: nobody saw a card, so none is needed.
@@ -256,8 +274,9 @@ export class RunCardManager {
   private async run(op: Op): Promise<void> {
     const { card } = op;
     const snapshot = card.snapshot;
-    const interrupted = card.interrupted;
-    const rendered = renderRunCard(snapshot, this.now(), { interrupted });
+    const stoppedBy = card.stoppedBy;
+    const interrupted = card.interrupted || stoppedBy !== undefined;
+    const rendered = renderRunCard(snapshot, this.now(), { interrupted: card.interrupted, stoppedBy });
     card.inFlight = true;
     try {
       if (op.kind === 'post') {

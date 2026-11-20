@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { cardProblems } from '../../channels/card-parts.js';
-import { formatElapsed, presentTense, renderRunCard, safeText, visibleSteps } from './render.js';
+import { formatElapsed, presentTense, renderRunCard, safeText, STOP_ACTION_ID, visibleSteps } from './render.js';
 import type { RunProgressSnapshot } from './snapshot.js';
 
 const START = Date.parse('2026-11-12T10:00:00.000Z');
@@ -215,5 +215,22 @@ describe('the running step', () => {
     expect(presentTense('Set up git')).toBe('Setting up git');
     expect(presentTense('Run the unit tests')).toBe('Run the unit tests');
     expect(presentTense('Used my_server: do thing')).toBe('Using my_server: do thing');
+  });
+});
+
+describe('Stop button', () => {
+  it('is on a live card only', () => {
+    expect(renderRunCard(snap(), START + 10_000).content.card.stopButton).toEqual({
+      id: STOP_ACTION_ID,
+      label: 'Stop',
+    });
+    expect(renderRunCard(snap({ status: 'done' }), START + 10_000).content.card.stopButton).toBeUndefined();
+    expect(renderRunCard(snap(), START + 10_000, { interrupted: true }).content.card.stopButton).toBeUndefined();
+  });
+
+  it('says who stopped the run, with no button', () => {
+    const card = renderRunCard(snap(), START + 10_000, { stoppedBy: 'Lise <!channel>' });
+    expect(card.content.card.stopButton).toBeUndefined();
+    expect(card.content.fallbackText.split('\n')[0]).toMatch(/^⏹️ \*Stopped\* by Lise ‹!channel› after/);
   });
 });

@@ -11,14 +11,19 @@
  * unguarded. The card only ever goes to the session's own chat — a route in
  * the payload is honored only when it names that chat.
  */
+import { registerQuestionActionHandler } from '../../channels/question-render-registry.js';
 import { getMessagingGroup } from '../../db/messaging-groups.js';
+import { getSession } from '../../db/sessions.js';
 import { getDeliveryAdapter, registerDeliveryAction, registerPostDeliveryHook } from '../../delivery.js';
 import { unguarded } from '../../guard/index.js';
 import { onHostShutdown, onHostStart } from '../../host-lifecycle.js';
 import { log } from '../../log.js';
 import { registerMessageEngagedHook } from '../../router.js';
+import { writeSessionMessage } from '../../session-manager.js';
+import { stopTypingRefresh } from '../typing/index.js';
 import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
+import { STOP_ACTION_ID } from './render.js';
 import { Receipts, wantsReceipt } from './receipts.js';
 import { parseRunProgressSnapshot, type RunProgressSnapshot } from './snapshot.js';
 import {
@@ -201,6 +206,43 @@ registerDeliveryAction(
   handleRunProgress,
   unguarded('display-only progress snapshot for the run card; carries no privilege'),
 );
+
+/**
+ * Stop pressed on a run card. Everything people see stops at once: the card
+ * turns "Stopped by …", the 👀 goes and typing ends. Then the runner is told
+ * to end the run (container/agent-runner/src/progress/sink.ts STOP_RUN_SIGNAL);
+ * the session and its memory are kept.
+ */
+export async function handleStopClick(messageId: string, by: string): Promise<boolean> {
+  const stopped = runCards.stop(messageId, by);
+  if (!stopped) return false;
+  const { sessionId, runId } = stopped;
+  log.info('Run stopped from its card', { sessionId, runId, by });
+  receipts.runUpdate(sessionId, 'cancelled');
+  stopTypingRefresh(sessionId);
+  const session = await getSession(sessionId);
+  if (!session) return true;
+  await writeSessionMessage(session.agent_group_id, sessionId, {
+    id: `stop-${runId}-${Date.now()}`,
+    kind: 'system',
+    timestamp: new Date().toISOString(),
+    content: JSON.stringify({ action: 'stop_run', runId }),
+    // Only an active run acts on it; it must not wake a sleeping container.
+    trigger: false,
+  });
+  return true;
+}
+
+registerQuestionActionHandler(async (event) => {
+  if (event.actionId !== STOP_ACTION_ID) return false;
+  const by = event.user?.fullName || event.user?.userName || 'someone';
+  try {
+    await handleStopClick(event.messageId, by);
+  } catch (err) {
+    log.warn('Run card: stop failed', { messageId: event.messageId, err });
+  }
+  return true;
+});
 
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let ticking = false;

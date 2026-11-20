@@ -440,6 +440,10 @@ export class ClaudeProvider implements AgentProvider {
       abort: () => {
         aborted = true;
         stream.end();
+        // Ending the input alone lets an in-flight step (a long command, a
+        // slow tool) run to completion first. close() ends the CLI now; the
+        // transcript it has written so far stays resumable.
+        sdkResult.close();
       },
     };
   }

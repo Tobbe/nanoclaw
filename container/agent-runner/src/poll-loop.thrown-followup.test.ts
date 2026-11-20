@@ -264,3 +264,68 @@ it('preserves the provider error for recovery when one notice write rejects, and
     write.mockRestore();
   }
 });
+
+it('ends the run when Stop is pressed on its card, without a failure notice or redelivery', async () => {
+  insertMessage('request-a', 'thread-a');
+  const controller = new AbortController();
+  let release: () => void = () => {};
+  const aborted = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let abortCalls = 0;
+  const provider: AgentProvider = {
+    registerMemorySessionHook: () => {},
+    isSessionInvalid: () => false,
+    query: () => ({
+      events: (async function* (): AsyncGenerator<ProviderEvent> {
+        yield { type: 'init', continuation: 'stop-session' };
+        yield { type: 'progress', message: 'Working', detail: { kind: 'status', text: 'Working' } };
+        await aborted;
+        throw new Error(DIAGNOSTIC);
+      })(),
+      push: () => {},
+      end: () => {},
+      abort: () => {
+        abortCalls++;
+        release();
+      },
+    }),
+  };
+  const loop = runPollLoop({
+    provider,
+    providerContract: CONTRACT,
+    providerName: 'mock',
+    cwd: '/workspace/agent',
+    signal: controller.signal,
+  });
+  const snapshots = () =>
+    getUndeliveredMessages()
+      .filter((row) => row.kind === 'system')
+      .map((row) => JSON.parse(row.content) as { action: string; snapshot: { runId: string; status: string } })
+      .filter((c) => c.action === 'run_progress')
+      .map((c) => c.snapshot);
+  try {
+    await waitFor(() => snapshots().length > 0);
+    const runId = snapshots()[0].runId;
+    // A stale signal for another run changes nothing.
+    insertStopSignal('stop-old', 'run-older');
+    insertStopSignal('stop-now', runId);
+    await waitFor(() => snapshots().some((s) => s.status === 'cancelled'));
+  } finally {
+    controller.abort();
+    await loop;
+  }
+  expect(abortCalls).toBe(1);
+  expect(visibleRows()).toEqual([]);
+  // The request and both signals are acked (the ack lives in outbound.db).
+  expect(getPendingMessages()).toEqual([]);
+});
+
+function insertStopSignal(id: string, runId: string): void {
+  getInboundDb()
+    .prepare(
+      `INSERT INTO messages_in (id, kind, timestamp, status, trigger, content)
+       VALUES (?, 'system', ?, 'pending', 0, ?)`,
+    )
+    .run(id, new Date().toISOString(), JSON.stringify({ action: 'stop_run', runId }));
+}

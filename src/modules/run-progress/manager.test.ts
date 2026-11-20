@@ -365,4 +365,35 @@ describe('RunCardManager', () => {
     await h.run(5000);
     expect(h.calls.every((c) => !c.title.includes('Done'))).toBe(true);
   });
+
+  it('turns the card into "Stopped by …" at once when Stop is pressed, and ignores the run after', async () => {
+    const h = harness();
+    h.manager.accept('sess', snap(1), TARGET);
+    await h.run(8000);
+    expect(h.calls.map((c) => c.op)).toEqual(['post']);
+
+    expect(h.manager.stop('ts-1', 'Lise Engelbrecht')).toEqual({ sessionId: 'sess', runId: 'run-1' });
+    // The edit goes out without waiting for a tick.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.calls.at(-1)).toMatchObject({ op: 'edit', messageId: 'ts-1' });
+    expect(h.calls.at(-1)!.title).toMatch(/^⏹️ Stopped by Lise Engelbrecht after/);
+    expect(h.saved.at(-1)).toMatchObject({ status: 'cancelled', closed: 1 });
+
+    const count = h.calls.length;
+    h.manager.accept('sess', snap(2), TARGET);
+    h.manager.accept('sess', snap(3, { status: 'cancelled' }), TARGET);
+    await h.run(30_000);
+    expect(h.calls.length).toBe(count);
+    expect(h.manager.stop('ts-1', 'Tobbe')).toBeNull();
+  });
+
+  it('does nothing for a Stop on a message that is no open run card', async () => {
+    const h = harness();
+    expect(h.manager.stop('ts-unknown', 'Tobbe')).toBeNull();
+    h.manager.accept('sess', snap(1), TARGET);
+    await h.run(8000);
+    h.manager.accept('sess', snap(2, { status: 'done' }), TARGET);
+    await h.run(5000);
+    expect(h.manager.stop('ts-1', 'Tobbe')).toBeNull();
+  });
 });

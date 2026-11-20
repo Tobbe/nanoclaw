@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 
 import type { RoutingContext } from '../formatter.js';
 import type { ProviderEvent } from '../providers/types.js';
-import { RunProgressSink, type RunProgressTarget } from './sink.js';
+import { RunProgressSink, stopRunId, type RunProgressTarget } from './sink.js';
 import type { RunProgressSnapshot } from './types.js';
 
 const CHAT: RoutingContext = {
@@ -145,5 +145,18 @@ describe('RunProgressSink', () => {
     sink.onEvent({ type: 'progress', message: 'status: thinking' }, CHAT);
     await settle();
     expect(writes[0].snapshot.statusText).toBe('status: thinking');
+  });
+});
+
+describe('stopRunId', () => {
+  it('reads the run id from a stop signal', () => {
+    expect(stopRunId({ kind: 'system', content: JSON.stringify({ action: 'stop_run', runId: 'run-7' }) })).toBe('run-7');
+  });
+
+  it('is null for anything else', () => {
+    expect(stopRunId({ kind: 'chat', content: JSON.stringify({ action: 'stop_run', runId: 'run-7' }) })).toBeNull();
+    expect(stopRunId({ kind: 'system', content: JSON.stringify({ action: 'question_response', runId: 'run-7' }) })).toBeNull();
+    expect(stopRunId({ kind: 'system', content: JSON.stringify({ action: 'stop_run' }) })).toBeNull();
+    expect(stopRunId({ kind: 'system', content: 'not json' })).toBeNull();
   });
 });

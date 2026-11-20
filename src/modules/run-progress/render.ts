@@ -27,7 +27,15 @@ const MAX_PLAN_SHOWN = 8;
 export interface RenderOptions {
   /** Host closed the card itself: the run's container went away mid-run. */
   interrupted?: boolean;
+  /** Someone pressed Stop on the card: their display name. */
+  stoppedBy?: string;
 }
+
+/**
+ * Action id of the Stop button on a live card. The click is matched to its
+ * run by the card's message id, so the button carries nothing else.
+ */
+export const STOP_ACTION_ID = 'ncrun:stop';
 
 /** A muted text part — Slack renders it as a small grey context block. */
 export interface MutedText {
@@ -37,7 +45,11 @@ export interface MutedText {
 
 export interface RenderedCard {
   /** JSON-serializable content for ChannelDeliveryAdapter.deliver (kind 'chat-sdk'). */
-  content: { type: 'card'; card: { title: string; children: MutedText[] }; fallbackText: string };
+  content: {
+    type: 'card';
+    card: { title: string; children: MutedText[]; stopButton?: { id: string; label: string } };
+    fallbackText: string;
+  };
   /** Changes only when what people see changes — used to skip no-op edits. */
   fingerprint: string;
 }
@@ -191,7 +203,8 @@ function planLines(plan: RunProgressSnapshot['plan']): string {
 }
 
 export function renderRunCard(snapshot: RunProgressSnapshot, nowMs: number, opts: RenderOptions = {}): RenderedCard {
-  const interrupted = opts.interrupted === true;
+  const stoppedBy = opts.stoppedBy;
+  const interrupted = opts.interrupted === true || stoppedBy !== undefined;
   const live = !interrupted && (snapshot.status === 'running' || snapshot.status === 'waiting');
   const elapsed = formatElapsed(elapsedMs(snapshot, nowMs, live));
   const steps = visibleSteps(snapshot.steps);
@@ -218,18 +231,23 @@ export function renderRunCard(snapshot: RunProgressSnapshot, nowMs: number, opts
     // Collapsed: the answer below says the rest.
     lines.push(`✅ Done in ${elapsed} · ${plural(total, 'step')}`);
   } else {
-    const head = interrupted
-      ? `⏹️ *Interrupted* after ${elapsed} · the agent stopped before finishing`
-      : snapshot.status === 'failed'
-        ? `❌ *Failed* after ${elapsed} · ${plural(total, 'step')}${failed > 0 ? `, ${failed} failed` : ''}`
-        : `⏹️ *Stopped* after ${elapsed} · ${plural(total, 'step')}`;
+    const head =
+      stoppedBy !== undefined
+        ? `⏹️ *Stopped* by ${safeText(stoppedBy)} after ${elapsed} · ${plural(total, 'step')}`
+        : interrupted
+          ? `⏹️ *Interrupted* after ${elapsed} · the agent stopped before finishing`
+          : snapshot.status === 'failed'
+            ? `❌ *Failed* after ${elapsed} · ${plural(total, 'step')}${failed > 0 ? `, ${failed} failed` : ''}`
+            : `⏹️ *Stopped* after ${elapsed} · ${plural(total, 'step')}`;
     lines.push(head);
     if (steps.length > 0) lines.push(stepLines(steps, snapshot.earlierSteps, nowMs, live));
   }
 
   const fallbackText = lines.join('\n');
+  const card: RenderedCard['content']['card'] = { title: '', children: lines.map(muted) };
+  if (live) card.stopButton = { id: STOP_ACTION_ID, label: 'Stop' };
   return {
-    content: { type: 'card', card: { title: '', children: lines.map(muted) }, fallbackText },
+    content: { type: 'card', card, fallbackText },
     fingerprint: fallbackText,
   };
 }

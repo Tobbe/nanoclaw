@@ -21,6 +21,24 @@ import { DEFAULT_MAX_STEPS, RunProgressTracker } from './tracker.js';
 import type { ProgressDetail, RunProgressSnapshot, TerminalStatus } from './types.js';
 
 export const RUN_PROGRESS_ACTION = 'run_progress';
+
+/**
+ * Inbound system message the host writes when someone presses Stop on a run
+ * card: `{ "action": "stop_run", "runId": "<run id>" }`. The runner aborts the
+ * active query when the run id is the one it is reporting.
+ */
+export const STOP_RUN_SIGNAL = 'stop_run';
+
+/** The run a stop signal names, or null when the message is not one. */
+export function stopRunId(msg: { kind: string; content: string }): string | null {
+  if (msg.kind !== 'system') return null;
+  try {
+    const parsed = JSON.parse(msg.content) as { action?: unknown; runId?: unknown };
+    return parsed.action === STOP_RUN_SIGNAL && typeof parsed.runId === 'string' ? parsed.runId : null;
+  } catch {
+    return null;
+  }
+}
 export const DEFAULT_PROGRESS_INTERVAL_MS = 2500;
 
 export interface RunProgressTarget {
@@ -84,6 +102,11 @@ export class RunProgressSink {
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = options.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
     this.log = options.log ?? (() => {});
+  }
+
+  /** The run being reported right now, if one has started. */
+  get runId(): string | undefined {
+    return this.tracker?.runId;
   }
 
   /** Feed one provider event. Non-progress events are ignored. Never blocks. */

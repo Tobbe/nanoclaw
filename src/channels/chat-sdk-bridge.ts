@@ -36,6 +36,9 @@ import type { ChannelAdapter, ChannelDefaults, ChannelSetup, InboundMessage } fr
 import { INSTANCE_KEY_RE } from './channel-registry.js';
 import { resolveQuestionRender, dispatchQuestionAction } from './question-render-registry.js';
 
+/** Same value as STOP_ACTION_ID in modules/run-progress/render.ts. */
+const RUN_STOP_ACTION_ID = 'ncrun:stop';
+
 /** Adapter with optional gateway support (e.g., Discord). */
 interface GatewayAdapter extends Adapter {
   startGatewayListener?(
@@ -733,6 +736,15 @@ function buildDisplayCard(content: Record<string, unknown>): { card: CardElement
     if (linkButtons.length > 0) {
       cardChildren.push(Actions(linkButtons));
     }
+  }
+
+  // The run card's Stop button is the one callback button a display card may
+  // carry. Its click is honored only for the message the host recorded as
+  // that run's card (modules/run-progress), so a copy on any other card does
+  // nothing.
+  const stop = cardSpec.stopButton as Record<string, unknown> | undefined;
+  if (stop && stop.id === RUN_STOP_ACTION_ID && typeof stop.label === 'string' && stop.label) {
+    cardChildren.push(Actions([Button({ id: RUN_STOP_ACTION_ID, label: stop.label, style: 'danger' })]));
   }
 
   if (cardChildren.length === 0 && !title) return null;

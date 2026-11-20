@@ -34,7 +34,7 @@ import { stripHarnessTagArtifacts } from './harness-tag-strip.js';
 import { isUploadTraceCommand, uploadTrace } from './upload-trace.js';
 import type { AgentProvider, AgentQuery, ProviderEvent, ProviderExchange } from './providers/types.js';
 import type { ProviderRuntimeContract } from './provider-contracts/registry.js';
-import { RUN_PROGRESS_ACTION, RunProgressSink, type RunProgressWrite } from './progress/sink.js';
+import { RUN_PROGRESS_ACTION, RunProgressSink, stopRunId, type RunProgressWrite } from './progress/sink.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -477,6 +477,22 @@ export async function processQuery(
     void (async () => {
       try {
         const pending = getPendingMessages();
+
+        // Stop pressed on this run's card. The host already shows the run as
+        // stopped; end it now. Its messages are acked, never redelivered.
+        // A signal for an earlier run is just acked.
+        const stops = pending.filter((m) => stopRunId(m) !== null);
+        if (stops.length > 0) {
+          markCompleted(stops.map((m) => m.id));
+          const runId = runProgress.runId;
+          if (runId !== undefined && stops.some((m) => stopRunId(m) === runId)) {
+            log(`Stop pressed on run ${runId} — aborting active query`);
+            markCompleted(initialBatchIds);
+            endedForCommand = true;
+            query.abort();
+            return;
+          }
+        }
 
         // Slash commands need a fresh query: /clear resets the SDK's
         // resume id (fixed at sdkQuery() time); admin/passthrough commands
