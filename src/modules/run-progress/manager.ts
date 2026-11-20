@@ -86,6 +86,8 @@ interface Card {
   interrupted: boolean;
   /** Who pressed Stop on the card; the card is final from then on. */
   stoppedBy?: string;
+  /** When Stop was pressed: the stopped card's elapsed time ends here. */
+  stoppedAt?: number;
   backoffUntil: number;
   notRunningSince?: number;
   finalAttempts: number;
@@ -214,6 +216,7 @@ export class RunCardManager {
     if (!card || card.renderedFinal || card.stoppedBy !== undefined) return null;
     if (card.interrupted || isFinal(card.snapshot.status)) return null;
     card.stoppedBy = by;
+    card.stoppedAt = this.now();
     card.backoffUntil = 0;
     if (!card.inFlight) void this.run({ card, kind: 'final' });
     return { sessionId: card.sessionId, runId: card.snapshot.runId, target: card.target };
@@ -276,7 +279,11 @@ export class RunCardManager {
     const snapshot = card.snapshot;
     const stoppedBy = card.stoppedBy;
     const interrupted = card.interrupted || stoppedBy !== undefined;
-    const rendered = renderRunCard(snapshot, this.now(), { interrupted: card.interrupted, stoppedBy });
+    const rendered = renderRunCard(snapshot, this.now(), {
+      interrupted: card.interrupted,
+      stoppedBy,
+      stoppedAt: card.stoppedAt,
+    });
     card.inFlight = true;
     try {
       if (op.kind === 'post') {

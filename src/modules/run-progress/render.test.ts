@@ -111,7 +111,7 @@ describe('renderRunCard', () => {
     const [, body] = lines(snap({ steps, status: 'failed' }));
     expect(body.split('\n')).toEqual([
       '✓ Pulled the latest changes ×2',
-      '◉ Read a file ×3',
+      '◌ Read a file ×3',
       '✗ Ran a build',
       '✗ Ran a build',
     ]);
@@ -232,5 +232,19 @@ describe('Stop button', () => {
     const card = renderRunCard(snap(), START + 10_000, { stoppedBy: 'Lise <!channel>' });
     expect(card.content.card.stopButton).toBeUndefined();
     expect(card.content.fallbackText.split('\n')[0]).toMatch(/^⏹️ \*Stopped\* by Lise ‹!channel› after/);
+  });
+
+  it('times the run up to the press, and marks the step it cut off', () => {
+    // One long step: the last update came right at the start.
+    const s = snap({
+      updatedAt: new Date(START).toISOString(),
+      steps: [step('a', 'Read a.ts'), step('b', 'Started the preview', 'running')],
+    });
+    const card = renderRunCard(s, START + 999_000, { stoppedBy: 'Tobbe', stoppedAt: START + 42_000 });
+    expect(card.content.fallbackText.split('\n')).toEqual([
+      '⏹️ *Stopped* by Tobbe after 42s · 2 steps',
+      '✓ Read a.ts',
+      '◌ Started the preview',
+    ]);
   });
 });

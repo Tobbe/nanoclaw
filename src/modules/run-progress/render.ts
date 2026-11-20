@@ -29,6 +29,8 @@ export interface RenderOptions {
   interrupted?: boolean;
   /** Someone pressed Stop on the card: their display name. */
   stoppedBy?: string;
+  /** When Stop was pressed (ms): the elapsed time ends here, not at the last update. */
+  stoppedAt?: number;
 }
 
 /**
@@ -58,6 +60,7 @@ type Step = RunProgressSnapshot['steps'][number];
 
 const PLAN_MARK = { done: '✓', running: '◉', pending: '○' } as const;
 const STEP_MARK = { done: '✓', running: '◉', failed: '✗' } as const;
+const CUT_OFF_MARK = '◌';
 
 /** Untrusted text → safe for a card line. */
 export function safeText(text: string): string {
@@ -73,9 +76,9 @@ export function formatElapsed(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
-function elapsedMs(snapshot: RunProgressSnapshot, nowMs: number, live: boolean): number {
+function elapsedMs(snapshot: RunProgressSnapshot, nowMs: number, live: boolean, stoppedAt?: number): number {
   const start = Date.parse(snapshot.startedAt);
-  const end = live ? nowMs : Date.parse(snapshot.updatedAt);
+  const end = live ? nowMs : (stoppedAt ?? Date.parse(snapshot.updatedAt));
   return Number.isFinite(start) && Number.isFinite(end) ? end - start : 0;
 }
 
@@ -180,7 +183,9 @@ export function groupSteps(steps: Step[]): StepGroup[] {
  */
 function stepLine(g: StepGroup, nowMs: number, live: boolean): string {
   const count = g.count > 1 ? ` ×${g.count}` : '';
-  if (g.state !== 'running' || !live) return `${STEP_MARK[g.state]} ${safeText(g.title)}${count}`;
+  // A step still running when the run ended was cut off: ◌, not the live ◉.
+  if (g.state === 'running' && !live) return `${CUT_OFF_MARK} ${safeText(g.title)}${count}`;
+  if (g.state !== 'running') return `${STEP_MARK[g.state]} ${safeText(g.title)}${count}`;
   const start = g.startedAt ? Date.parse(g.startedAt) : NaN;
   const timer = Number.isFinite(start) && nowMs - start >= 1000 ? ` · ${formatElapsed(nowMs - start)}` : '';
   return `${STEP_MARK.running} ${safeText(presentTense(g.title))}${count}${timer}`;
@@ -206,7 +211,7 @@ export function renderRunCard(snapshot: RunProgressSnapshot, nowMs: number, opts
   const stoppedBy = opts.stoppedBy;
   const interrupted = opts.interrupted === true || stoppedBy !== undefined;
   const live = !interrupted && (snapshot.status === 'running' || snapshot.status === 'waiting');
-  const elapsed = formatElapsed(elapsedMs(snapshot, nowMs, live));
+  const elapsed = formatElapsed(elapsedMs(snapshot, nowMs, live, stoppedBy !== undefined ? opts.stoppedAt : undefined));
   const steps = visibleSteps(snapshot.steps);
   const total = snapshot.steps.length + snapshot.earlierSteps;
   const failed = steps.filter((s) => s.state === 'failed').length;
