@@ -197,6 +197,32 @@ export function pauseTypingRefreshAfterDelivery(sessionId: string): void {
   entry.deliveredAt = Date.now();
 }
 
+/**
+ * Take the indicator down whatever it last showed: Stop was pressed on a run
+ * card. Unlike stopTypingRefresh this clears even when a message was just
+ * delivered (a refresh tick right before a post can leave Slack's "Typing…"
+ * stuck), and clears once more a second later in case a setTyping was
+ * already on its way.
+ */
+export function clearTypingNow(
+  sessionId: string,
+  channelType: string,
+  platformId: string,
+  threadId: string | null,
+  instance?: string,
+): void {
+  const entry = typingRefreshers.get(sessionId);
+  if (entry) {
+    clearInterval(entry.interval);
+    typingRefreshers.delete(sessionId);
+  }
+  const clear = () => {
+    adapter?.clearTyping?.(channelType, platformId, threadId, instance)?.catch(() => {});
+  };
+  clear();
+  setTimeout(clear, 1000).unref();
+}
+
 export function stopTypingRefresh(sessionId: string): void {
   const entry = typingRefreshers.get(sessionId);
   if (!entry) return;

@@ -209,14 +209,14 @@ export class RunCardManager {
    * Returns the run it stopped, or null when that message is not an open
    * run card (already finished, or not a run card at all).
    */
-  stop(messageId: string, by: string): { sessionId: string; runId: string } | null {
+  stop(messageId: string, by: string): { sessionId: string; runId: string; target: CardTarget } | null {
     const card = [...this.cards.values()].find((c) => c.messageId === messageId);
     if (!card || card.renderedFinal || card.stoppedBy !== undefined) return null;
     if (card.interrupted || isFinal(card.snapshot.status)) return null;
     card.stoppedBy = by;
     card.backoffUntil = 0;
     if (!card.inFlight) void this.run({ card, kind: 'final' });
-    return { sessionId: card.sessionId, runId: card.snapshot.runId };
+    return { sessionId: card.sessionId, runId: card.snapshot.runId, target: card.target };
   }
 
   /**

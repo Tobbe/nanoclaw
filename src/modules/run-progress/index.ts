@@ -20,7 +20,7 @@ import { onHostShutdown, onHostStart } from '../../host-lifecycle.js';
 import { log } from '../../log.js';
 import { registerMessageEngagedHook } from '../../router.js';
 import { writeSessionMessage } from '../../session-manager.js';
-import { stopTypingRefresh } from '../typing/index.js';
+import { clearTypingNow } from '../typing/index.js';
 import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
 import { STOP_ACTION_ID } from './render.js';
@@ -216,10 +216,10 @@ registerDeliveryAction(
 export async function handleStopClick(messageId: string, by: string): Promise<boolean> {
   const stopped = runCards.stop(messageId, by);
   if (!stopped) return false;
-  const { sessionId, runId } = stopped;
+  const { sessionId, runId, target } = stopped;
   log.info('Run stopped from its card', { sessionId, runId, by });
   receipts.runUpdate(sessionId, 'cancelled');
-  stopTypingRefresh(sessionId);
+  clearTypingNow(sessionId, target.channelType, target.platformId, target.threadId, target.instance);
   const session = await getSession(sessionId);
   if (!session) return true;
   await writeSessionMessage(session.agent_group_id, sessionId, {

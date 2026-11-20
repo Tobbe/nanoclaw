@@ -372,7 +372,11 @@ describe('RunCardManager', () => {
     await h.run(8000);
     expect(h.calls.map((c) => c.op)).toEqual(['post']);
 
-    expect(h.manager.stop('ts-1', 'Lise Engelbrecht')).toEqual({ sessionId: 'sess', runId: 'run-1' });
+    expect(h.manager.stop('ts-1', 'Lise Engelbrecht')).toEqual({
+      sessionId: 'sess',
+      runId: 'run-1',
+      target: TARGET,
+    });
     // The edit goes out without waiting for a tick.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(h.calls.at(-1)).toMatchObject({ op: 'edit', messageId: 'ts-1' });

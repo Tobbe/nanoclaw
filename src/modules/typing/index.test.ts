@@ -163,4 +163,23 @@ describe('clearing the indicator', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(cleared).toEqual([]);
   });
+
+  it('clearTypingNow clears even right after a delivery, then once more a second later', async () => {
+    const { clearTypingNow, pauseTypingRefreshAfterDelivery } = await import('./index.js');
+    const cleared = clearingAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    await vi.advanceTimersByTimeAsync(1_000);
+    pauseTypingRefreshAfterDelivery('sess-1');
+    clearTypingNow('sess-1', 'slack', 'slack:C1', 'T1', 'slack');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cleared).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(cleared).toEqual([
+      { channelType: 'slack', platformId: 'slack:C1', threadId: 'T1', instance: 'slack' },
+      { channelType: 'slack', platformId: 'slack:C1', threadId: 'T1', instance: 'slack' },
+    ]);
+    // The refresh is gone: no more typing ticks after Stop.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(cleared).toHaveLength(2);
+  });
 });
