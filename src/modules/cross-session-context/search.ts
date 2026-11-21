@@ -264,12 +264,20 @@ export async function sessionBackfillCandidates(
   const records = await listGroupThreadRecords(agentGroupId);
   const recorded = new Set(records.map((r) => r.session_id));
   // `--over <chars>`: also rebuild records at least that long (e.g. ones cut at the cap).
+  // `--containing "<words>"`: also rebuild records containing any of them
+  // (case-insensitive), e.g. spellings the instructions no longer use.
   const over = Number(args.over);
-  const rebuild = new Map(
-    Number.isFinite(over) && over > 0
-      ? records.filter((r) => r.record.length >= over).map((r) => [r.session_id, r.updated_at] as const)
-      : [],
-  );
+  const words =
+    typeof args.containing === 'string'
+      ? args.containing
+          .toLocaleLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 0)
+      : [];
+  const due = (record: string): boolean =>
+    (Number.isFinite(over) && over > 0 && record.length >= over) ||
+    words.some((w) => record.toLocaleLowerCase().includes(w));
+  const rebuild = new Map(records.filter((r) => due(r.record)).map((r) => [r.session_id, r.updated_at] as const));
   const sessions = await getSessionsByAgentGroup(agentGroupId);
   return sessions
     .filter(

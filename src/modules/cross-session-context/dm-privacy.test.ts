@@ -135,7 +135,7 @@ describe('a global-scope personal agent reading the team', () => {
     await ensureContainerConfig(SOLO);
     await updateContainerConfigScalars(SOLO, { cli_scope: 'global' });
     await ensureContainerConfig(TEAM);
-    await saveThreadRecord((await getSession('s-website')) as Session, 'Buttons\n- Colour (farve): navy');
+    await saveThreadRecord((await getSession('s-website')) as Session, 'Buttons\n- Color (farve): navy');
     await saveThreadRecord((await getSession('s-lise')) as Session, 'Lise private thread');
   });
 
@@ -188,6 +188,8 @@ describe('rebuilding long records', () => {
     const me = caller('s-other', 'mg-website');
     expect(await sessionBackfillCandidates({}, me)).toEqual([]);
     const [c] = await sessionBackfillCandidates({ over: 1_900 }, me);
+    expect(await sessionBackfillCandidates({ containing: 'XXX nothing' }, me)).toHaveLength(1);
+    expect(await sessionBackfillCandidates({ containing: 'colour grey' }, me)).toEqual([]);
     expect(c).toMatchObject({ sessionId: 's-website', basedOn: '2026-11-20T10:00:00.000Z' });
 
     const rebuilt = { sessionId: 's-website', record: 'Short', lastAt: '2026-11-19T09:00:00.000Z' };

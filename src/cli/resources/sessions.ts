@@ -113,7 +113,7 @@ registerResource({
         'Words only match as written, so search in both languages and with synonyms ("farve farver color colour"). ' +
         'Each hit names its session; open the whole thread with `ncl sessions history <id>`.',
       examples: [
-        `# Where did we talk about button colours?\nncl sessions search --query "farve farver color colour knap button"`,
+        `# Where did we talk about button colors?\nncl sessions search --query "farve farver color colour knap button"`,
       ],
       args: [
         { name: 'query', type: 'string', description: 'Words to look for, in any language.', required: true },
@@ -174,6 +174,11 @@ registerResource({
           description: 'Also list threads whose record is at least this many characters, to rebuild it.',
         },
         {
+          name: 'containing',
+          type: 'string',
+          description: 'Also list threads whose record contains any of these words (case-insensitive), to rebuild it.',
+        },
+        {
           name: 'group',
           type: 'string',
           description:
@@ -202,6 +207,12 @@ registerResource({
           description: 'Also rebuild records at least this many characters long. A record updated meanwhile is kept.',
         },
         {
+          name: 'containing',
+          type: 'string',
+          description:
+            'Also rebuild records containing any of these words, e.g. "colour grey". A record updated meanwhile is kept.',
+        },
+        {
           name: 'group',
           type: 'string',
           description: 'Another agent group to backfill (global-scope agents only; its shared channels).',
@@ -214,7 +225,7 @@ registerResource({
     recall: {
       access: 'open',
       description:
-        'Ask what was discussed, in plain words and any language ("what did we say about the colours?"). ' +
+        'Ask what was discussed, in plain words and any language ("what did we say about the colors?"). ' +
         'A small model reads the records of every thread you can read and answers by meaning, naming the threads, ' +
         'so the words need not match. Runs inside your container; open a named thread with `ncl sessions history <id>`, ' +
         'and use `ncl sessions search` for exact wording.',

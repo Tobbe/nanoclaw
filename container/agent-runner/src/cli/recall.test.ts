@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 
 import { buildRecallPrompt, recall } from './recall.js';
 
-const RECORDS = '[2026-11-14 11:00 · #website · s-buttons]\nButtons\n- Colour (farve): navy default, orange only for problems';
+const RECORDS = '[2026-11-14 11:00 · #website · s-buttons]\nButtons\n- Color (farve): navy default, orange only for problems';
 
 describe('recall', () => {
   it('hands the question and every record to the model and prints its pick', async () => {
@@ -11,7 +11,7 @@ describe('recall', () => {
       fetchRecords: async () => RECORDS,
       ask: async (prompt) => {
         seen = prompt;
-        return '[2026-11-14 11:00 · #website · s-buttons]\n- Colour (farve): navy default';
+        return '[2026-11-14 11:00 · #website · s-buttons]\n- Color (farve): navy default';
       },
     });
     expect(seen).toBe(buildRecallPrompt('hvad sagde vi om farverne?', RECORDS));

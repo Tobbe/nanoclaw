@@ -97,7 +97,7 @@ afterEach(async () => {
 });
 
 const BUTTONS =
-  'Buttons\n- Shape: rounder corners, PR #71 merged\n- Colour (farve): navy default, orange only for problems (Lise)\nOpen: nothing';
+  'Buttons\n- Shape: rounder corners, PR #71 merged\n- Color (farve): navy default, orange only for problems (Lise)\nOpen: nothing';
 
 describe('thread records', () => {
   it('keeps the newest record per session and lists a conversation newest first', async () => {

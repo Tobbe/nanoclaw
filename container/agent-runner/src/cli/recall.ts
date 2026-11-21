@@ -6,7 +6,7 @@
  * them with `ncl sessions records --all`, but has no model access. So the
  * container's ncl answers recall itself: fetch the records, hand them and
  * the question to the small model, print what it picks. The words need not
- * match ("farver" finds "Colour (farve): navy"), which `ncl sessions search`
+ * match ("farver" finds "Color (farve): navy"), which `ncl sessions search`
  * can't do.
  */
 export const RECALL_COMMAND = 'sessions-recall';

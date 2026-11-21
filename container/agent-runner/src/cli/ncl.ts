@@ -282,7 +282,10 @@ async function main(): Promise<void> {
         return resp;
       });
     const groupArg = typeof requestArgs.group === 'string' && requestArgs.group ? { group: requestArgs.group } : {};
-    const overArg = requestArgs.over !== undefined ? { over: requestArgs.over } : {};
+    const overArg = {
+      ...(requestArgs.over !== undefined ? { over: requestArgs.over } : {}),
+      ...(typeof requestArgs.containing === 'string' ? { containing: requestArgs.containing } : {}),
+    };
 
     if (command === BACKFILL_COMMAND) {
       // Answered here, like recall: the host has the transcripts but no model access.

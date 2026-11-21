@@ -195,14 +195,14 @@ describe('formatter rendering', () => {
       'records',
       'chat',
       {
-        text: '[20 Nov 14:48 · sess-1]\nButtons\n- Colour: navy <default>',
+        text: '[20 Nov 14:48 · sess-1]\nButtons\n- Color: navy <default>',
         self: true,
         echo: { surface: 'thread-records', label: 'records' },
       },
       { trigger: 0, channelType: 'session-echo' },
     );
     const result = formatMessages(getPendingMessages());
-    expect(result).toContain('<channel-threads>\n[20 Nov 14:48 · sess-1]\nButtons\n- Colour: navy &lt;default&gt;\n</channel-threads>');
+    expect(result).toContain('<channel-threads>\n[20 Nov 14:48 · sess-1]\nButtons\n- Color: navy &lt;default&gt;\n</channel-threads>');
     expect(result).not.toContain('<cross-session-context');
   });
 
