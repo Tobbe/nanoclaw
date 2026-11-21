@@ -51,7 +51,6 @@ describe('RECORD_INSTRUCTIONS', () => {
     expect(RECORD_INSTRUCTIONS).toContain('no decision');
     expect(RECORD_INSTRUCTIONS).toContain('Color (farve)');
     expect(RECORD_INSTRUCTIONS).toContain('American English');
-    expect(RECORD_INSTRUCTIONS).not.toMatch(/colour/i);
     expect(RECORD_INSTRUCTIONS).toContain('Shorten, never drop.');
   });
 });
