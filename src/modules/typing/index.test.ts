@@ -196,7 +196,7 @@ describe('clearing the indicator', () => {
     stopTypingRefresh('sess-1');
   });
 
-  it("skips the second clear when a new refresh started in between", async () => {
+  it('skips the second clear when a new refresh started in between', async () => {
     const cleared = clearingAdapter();
     startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
     stopTypingRefresh('sess-1');
