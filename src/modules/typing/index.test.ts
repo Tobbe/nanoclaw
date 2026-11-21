@@ -148,20 +148,36 @@ describe('clearing the indicator', () => {
   it('clears when the refresh ends on its own because the agent went idle', async () => {
     const cleared = clearingAdapter();
     startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
-    // No heartbeat file: once the 15 s grace is over, the next tick stops.
+    // No heartbeat file: once the 15 s grace is over, the next tick stops,
+    // clears, and clears once more a second later.
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(cleared).toHaveLength(1);
+    expect(cleared).toHaveLength(2);
   });
 
-  it("doesn't clear when a message was delivered after the last typing tick", async () => {
+  it('clears even right after a delivery, then once more a second later', async () => {
+    // Live-hit: CodeBot had answered, but a typing tick that reached Slack
+    // just after the reply left "Typing…" under it for minutes.
     const { pauseTypingRefreshAfterDelivery } = await import('./index.js');
     const cleared = clearingAdapter();
-    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
     await vi.advanceTimersByTimeAsync(1_000);
     pauseTypingRefreshAfterDelivery('sess-1');
     stopTypingRefresh('sess-1');
     await vi.advanceTimersByTimeAsync(0);
-    expect(cleared).toEqual([]);
+    expect(cleared).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(cleared).toHaveLength(2);
+  });
+
+  it("skips the second clear when a new refresh started in between", async () => {
+    const cleared = clearingAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    stopTypingRefresh('sess-1');
+    await vi.advanceTimersByTimeAsync(0);
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(cleared).toHaveLength(1);
+    stopTypingRefresh('sess-1');
   });
 
   it('clearTypingNow clears even right after a delivery, then once more a second later', async () => {

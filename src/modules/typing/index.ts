@@ -9,7 +9,7 @@
  *
  * After delivering a user-facing message, the refresh is paused for
  * POST_DELIVERY_PAUSE_MS so the client-side indicator can visually
- * clear.
+ * clear. When the refresh ends, the indicator is always taken down.
  *
  * Default module status:
  *   - Lives in src/modules/ for signaling (not really core), but ships
@@ -59,9 +59,6 @@ interface TypingTarget {
   interval: NodeJS.Timeout;
   startedAt: number;
   pausedUntil: number; // epoch ms; 0 = not paused
-  /** Epoch ms of the last setTyping and of the last delivered message. */
-  typedAt: number;
-  deliveredAt: number;
 }
 
 let adapter: TypingAdapter | null = null;
@@ -92,14 +89,27 @@ async function triggerTyping(
 }
 
 /**
- * On stop: if the indicator went up after the last delivered message, take
- * it down. Slack keeps "Typing…" until the bot posts, so an agent that
- * finishes without a reply (it decided the message wasn't for it) would
- * leave it showing for minutes.
+ * Take the indicator down when the refresh ends, whatever it last showed,
+ * and once more a second later in case a setTyping was already on its way.
+ * Slack keeps "Typing…" until the bot posts, and a refresh tick that lands
+ * just after the reply turns it back on, so neither "the agent posted" nor
+ * "the last tick came before the post" means it's gone. The second clear
+ * is skipped if a new refresh started meanwhile.
  */
-function clearIfShowing(entry: TypingTarget): void {
-  if (entry.typedAt <= entry.deliveredAt) return;
-  adapter?.clearTyping?.(entry.channelType, entry.platformId, entry.threadId, entry.instance).catch(() => {});
+function clearTyping(
+  sessionId: string,
+  channelType: string,
+  platformId: string,
+  threadId: string | null,
+  instance?: string,
+): void {
+  const clear = () => {
+    adapter?.clearTyping?.(channelType, platformId, threadId, instance)?.catch(() => {});
+  };
+  clear();
+  setTimeout(() => {
+    if (!typingRefreshers.has(sessionId)) clear();
+  }, 1000).unref();
 }
 
 function isHeartbeatFresh(agentGroupId: string, sessionId: string): boolean {
@@ -130,7 +140,6 @@ export function startTypingRefresh(
     triggerTyping(channelType, platformId, threadId, instance).catch(() => {});
     existing.startedAt = Date.now();
     existing.pausedUntil = 0;
-    existing.typedAt = Date.now();
     // Keep the stored entry self-consistent: a re-trigger can arrive from
     // a different chat address (agent-shared sessions span messaging
     // groups, possibly on different platforms/instances), so the address
@@ -159,14 +168,13 @@ export function startTypingRefresh(
     const withinGrace = Date.now() - entry.startedAt < TYPING_GRACE_MS;
     if (withinGrace || isHeartbeatFresh(entry.agentGroupId, sessionId)) {
       triggerTyping(entry.channelType, entry.platformId, entry.threadId, entry.instance).catch(() => {});
-      entry.typedAt = Date.now();
       return;
     }
 
     // Out of grace AND heartbeat stale — agent is idle, stop refreshing.
     clearInterval(entry.interval);
     typingRefreshers.delete(sessionId);
-    clearIfShowing(entry);
+    clearTyping(sessionId, entry.channelType, entry.platformId, entry.threadId, entry.instance);
   }, TYPING_REFRESH_MS);
   // unref so a stale refresher can't hold the event loop alive.
   interval.unref();
@@ -179,8 +187,6 @@ export function startTypingRefresh(
     interval,
     startedAt,
     pausedUntil: 0,
-    typedAt: startedAt,
-    deliveredAt: 0,
   });
 }
 
@@ -194,15 +200,11 @@ export function pauseTypingRefreshAfterDelivery(sessionId: string): void {
   const entry = typingRefreshers.get(sessionId);
   if (!entry) return;
   entry.pausedUntil = Date.now() + POST_DELIVERY_PAUSE_MS;
-  entry.deliveredAt = Date.now();
 }
 
 /**
- * Take the indicator down whatever it last showed: Stop was pressed on a run
- * card. Unlike stopTypingRefresh this clears even when a message was just
- * delivered (a refresh tick right before a post can leave Slack's "Typing…"
- * stuck), and clears once more a second later in case a setTyping was
- * already on its way.
+ * Take the indicator down now: Stop was pressed on a run card. The address
+ * comes from the card, so this works even when no refresh is running.
  */
 export function clearTypingNow(
   sessionId: string,
@@ -216,11 +218,7 @@ export function clearTypingNow(
     clearInterval(entry.interval);
     typingRefreshers.delete(sessionId);
   }
-  const clear = () => {
-    adapter?.clearTyping?.(channelType, platformId, threadId, instance)?.catch(() => {});
-  };
-  clear();
-  setTimeout(clear, 1000).unref();
+  clearTyping(sessionId, channelType, platformId, threadId, instance);
 }
 
 export function stopTypingRefresh(sessionId: string): void {
@@ -228,5 +226,5 @@ export function stopTypingRefresh(sessionId: string): void {
   if (!entry) return;
   clearInterval(entry.interval);
   typingRefreshers.delete(sessionId);
-  clearIfShowing(entry);
+  clearTyping(sessionId, entry.channelType, entry.platformId, entry.threadId, entry.instance);
 }
