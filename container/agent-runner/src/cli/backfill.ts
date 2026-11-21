@@ -24,6 +24,8 @@ const CONCURRENCY = 3;
 export interface Candidate {
   sessionId: string;
   conversation: string;
+  /** A rebuild: the existing record's updated_at, passed back so a newer record is never replaced. */
+  basedOn?: string;
 }
 
 export interface TranscriptRow {
@@ -81,14 +83,15 @@ export interface BackfillDeps {
   candidates: () => Promise<Candidate[]>;
   history: (sessionId: string) => Promise<TranscriptRow[]>;
   ask: (prompt: string) => Promise<string>;
-  save: (sessionId: string, record: string, lastAt: string) => Promise<void>;
+  save: (sessionId: string, record: string, lastAt: string, basedOn?: string) => Promise<void>;
   print: (line: string) => void;
 }
 
 /** Backfill every candidate, a few at a time. Returns the summary line. */
 export async function backfill(deps: BackfillDeps): Promise<string> {
   const queue = await deps.candidates();
-  deps.print(`${queue.length} threads without a record.`);
+  const rebuilds = queue.filter((c) => c.basedOn).length;
+  deps.print(`${queue.length - rebuilds} threads without a record, ${rebuilds} to rebuild.`);
   let written = 0;
   let empty = 0;
   let failed = 0;
@@ -100,7 +103,7 @@ export async function backfill(deps: BackfillDeps): Promise<string> {
           empty += 1;
           continue;
         }
-        await deps.save(c.sessionId, result.record, result.lastAt);
+        await deps.save(c.sessionId, result.record, result.lastAt, c.basedOn);
         written += 1;
         deps.print(`✓ ${c.conversation} · ${c.sessionId}: ${result.record.split('\n')[0]}`);
       } catch (err) {

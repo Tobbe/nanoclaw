@@ -282,21 +282,28 @@ async function main(): Promise<void> {
         return resp;
       });
     const groupArg = typeof requestArgs.group === 'string' && requestArgs.group ? { group: requestArgs.group } : {};
+    const overArg = requestArgs.over !== undefined ? { over: requestArgs.over } : {};
 
     if (command === BACKFILL_COMMAND) {
       // Answered here, like recall: the host has the transcripts but no model access.
       const summary = await backfill({
-        candidates: async () => (await ask('sessions-backfill-candidates', groupArg)).data as Candidate[],
+        candidates: async () => (await ask('sessions-backfill-candidates', { ...groupArg, ...overArg })).data as Candidate[],
         history: async (id) =>
           (await ask('sessions-history', { id, limit: BACKFILL_HISTORY_LIMIT })).data as TranscriptRow[],
         ask: askSmallModel,
-        save: async (sessionId, record, lastAt) => {
+        save: async (sessionId, record, lastAt, basedOn) => {
           await serial(() =>
             mailbox.run(() =>
               mailbox.operations.writeMessageOut({
                 id: generateId(),
                 kind: 'system',
-                content: JSON.stringify({ action: BACKFILL_ACTION, sessionId, record, lastAt }),
+                content: JSON.stringify({
+                  action: BACKFILL_ACTION,
+                  sessionId,
+                  record,
+                  lastAt,
+                  ...(basedOn ? { basedOn } : {}),
+                }),
               }),
             ),
           );

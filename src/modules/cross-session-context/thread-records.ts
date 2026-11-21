@@ -90,11 +90,28 @@ export async function saveThreadRecord(session: Session, record: string, now = n
  * thread's own last activity so it ages like a live one. Never replaces a
  * record (a live one may have landed meanwhile).
  */
-export async function saveBackfilledThreadRecord(session: Session, record: string, lastAt: Date): Promise<boolean> {
+export async function saveBackfilledThreadRecord(
+  session: Session,
+  record: string,
+  lastAt: Date,
+  basedOn?: string,
+): Promise<boolean> {
   if (!session.messaging_group_id) return false;
   const text = record.trim().slice(0, THREAD_RECORD_MAX_CHARS);
   if (!text) return false;
   const stamp = Number.isFinite(lastAt.getTime()) && lastAt.getTime() <= Date.now() ? lastAt : new Date();
+  if (basedOn) {
+    // A rebuild replaces the record it was built from, and nothing newer:
+    // a live update meanwhile wins.
+    const replaced = await getDb().run(
+      `UPDATE thread_records SET record = ?, updated_at = ? WHERE session_id = ? AND updated_at = ?`,
+      text,
+      stamp.toISOString(),
+      session.id,
+      basedOn,
+    );
+    return (replaced?.changes ?? 0) > 0;
+  }
   const result = await getDb().run(
     `INSERT INTO thread_records (session_id, agent_group_id, messaging_group_id, thread_id, record, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)
@@ -137,7 +154,8 @@ export async function backfillThreadRecordFrom(sender: Session, content: Record<
     return false;
   }
   const lastAt = new Date(typeof content.lastAt === 'string' ? content.lastAt : NaN);
-  const saved = await saveBackfilledThreadRecord(target, content.record, lastAt);
+  const basedOn = typeof content.basedOn === 'string' ? content.basedOn : undefined;
+  const saved = await saveBackfilledThreadRecord(target, content.record, lastAt, basedOn);
   if (saved) log.info('Backfilled thread record', { sessionId: targetId, by: sender.id });
   return saved;
 }

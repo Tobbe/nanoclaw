@@ -169,6 +169,11 @@ registerResource({
       examples: [`ncl sessions backfill-candidates`],
       args: [
         {
+          name: 'over',
+          type: 'number',
+          description: 'Also list threads whose record is at least this many characters, to rebuild it.',
+        },
+        {
           name: 'group',
           type: 'string',
           description:
@@ -186,8 +191,16 @@ registerResource({
         'Write thread records for the threads that have none (see backfill-candidates): a small model reads each ' +
         'transcript and writes its record, as for live threads. Never replaces an existing record. ' +
         'Runs inside your container and can take several minutes; give it a long timeout.',
-      examples: [`ncl sessions backfill-records`],
+      examples: [
+        `ncl sessions backfill-records`,
+        `# Also rebuild records cut at the cap:\nncl sessions backfill-records --over 1900`,
+      ],
       args: [
+        {
+          name: 'over',
+          type: 'number',
+          description: 'Also rebuild records at least this many characters long. A record updated meanwhile is kept.',
+        },
         {
           name: 'group',
           type: 'string',

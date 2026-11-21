@@ -246,6 +246,8 @@ export interface BackfillCandidate {
   /** The conversation's name, e.g. "#website". */
   conversation: string;
   createdAt: string;
+  /** Set for a rebuild: the existing record's updated_at, which the save must still find. */
+  basedOn?: string;
 }
 
 /**
@@ -259,15 +261,27 @@ export async function sessionBackfillCandidates(
 ): Promise<BackfillCandidate[]> {
   const agentGroupId = await groupOf(args, ctx);
   const readable = await readableConversations(agentGroupId, ctx);
-  const recorded = new Set((await listGroupThreadRecords(agentGroupId)).map((r) => r.session_id));
+  const records = await listGroupThreadRecords(agentGroupId);
+  const recorded = new Set(records.map((r) => r.session_id));
+  // `--over <chars>`: also rebuild records at least that long (e.g. ones cut at the cap).
+  const over = Number(args.over);
+  const rebuild = new Map(
+    Number.isFinite(over) && over > 0
+      ? records.filter((r) => r.record.length >= over).map((r) => [r.session_id, r.updated_at] as const)
+      : [],
+  );
   const sessions = await getSessionsByAgentGroup(agentGroupId);
   return sessions
-    .filter((s) => s.messaging_group_id && readable.allows(s.messaging_group_id) && !recorded.has(s.id))
+    .filter(
+      (s) =>
+        s.messaging_group_id && readable.allows(s.messaging_group_id) && (!recorded.has(s.id) || rebuild.has(s.id)),
+    )
     .filter((s) => ctx.caller !== 'agent' || s.id !== ctx.sessionId)
     .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
     .map((s) => ({
       sessionId: s.id,
       conversation: readable.names.get(s.messaging_group_id as string) ?? (s.messaging_group_id as string),
       createdAt: s.created_at,
+      ...(rebuild.has(s.id) ? { basedOn: rebuild.get(s.id) } : {}),
     }));
 }

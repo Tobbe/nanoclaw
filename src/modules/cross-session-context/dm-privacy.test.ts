@@ -180,3 +180,23 @@ describe('backfill', () => {
     expect(rows[1].updated_at).toBe('2026-11-02T09:00:00.000Z');
   });
 });
+
+describe('rebuilding long records', () => {
+  it('lists records over the length, and replaces one only if it is still the one it was built from', async () => {
+    const website = (await getSession('s-website')) as Session;
+    await saveThreadRecord(website, 'x'.repeat(2_000), new Date('2026-11-20T10:00:00.000Z'));
+    const me = caller('s-other', 'mg-website');
+    expect(await sessionBackfillCandidates({}, me)).toEqual([]);
+    const [c] = await sessionBackfillCandidates({ over: 1_900 }, me);
+    expect(c).toMatchObject({ sessionId: 's-website', basedOn: '2026-11-20T10:00:00.000Z' });
+
+    const rebuilt = { sessionId: 's-website', record: 'Short', lastAt: '2026-11-19T09:00:00.000Z' };
+    // A live update landed meanwhile: the rebuild loses.
+    await saveThreadRecord(website, 'Live update', new Date('2026-11-21T08:00:00.000Z'));
+    expect(await backfillThreadRecordFrom(website, { ...rebuilt, basedOn: c.basedOn })).toBe(false);
+    expect((await listGroupThreadRecords(TEAM))[0].record).toBe('Live update');
+    // Built from the current record: replaced.
+    expect(await backfillThreadRecordFrom(website, { ...rebuilt, basedOn: '2026-11-21T08:00:00.000Z' })).toBe(true);
+    expect((await listGroupThreadRecords(TEAM))[0].record).toBe('Short');
+  });
+});

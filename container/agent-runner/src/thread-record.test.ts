@@ -37,6 +37,21 @@ describe('cleanRecord', () => {
     expect(cleanRecord('<record>\nTitle\n</record>')).toBe('Title');
     expect(cleanRecord('  ')).toBeNull();
   });
+
+  it('cuts an over-long record at a line end', () => {
+    const long = `Title\n- A: ${'a'.repeat(1_500)}\n- B: ${'b'.repeat(1_000)}`;
+    expect(cleanRecord(long)).toBe(`Title\n- A: ${'a'.repeat(1_500)}`);
+  });
+});
+
+describe('RECORD_INSTRUCTIONS', () => {
+  it('keeps detours, undecided topics and both-language key words, and squeezes finished topics', async () => {
+    const { RECORD_INSTRUCTIONS } = await import('./thread-record.js');
+    expect(RECORD_INSTRUCTIONS).toContain('also a short detour');
+    expect(RECORD_INSTRUCTIONS).toContain('no decision');
+    expect(RECORD_INSTRUCTIONS).toContain('Colour (farve)');
+    expect(RECORD_INSTRUCTIONS).toContain('Shorten, never drop.');
+  });
 });
 
 describe('ThreadRecorder', () => {

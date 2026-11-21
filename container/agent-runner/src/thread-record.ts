@@ -21,6 +21,9 @@ export const THREAD_RECORD_MAX_CHARS = 2_000;
 const TURN_MAX_CHARS = 12_000;
 const DEFAULT_RECORD_FILE = '/workspace/.thread-record.md';
 
+/** Length the record aims to stay under, leaving room below the hard cap. */
+export const THREAD_RECORD_TARGET_CHARS = 1_500;
+
 export const RECORD_INSTRUCTIONS = [
   'You keep a short record of one chat thread for a team assistant. Other threads read it later to find',
   'out what was discussed here, so every topic must stay findable after the thread moves on.',
@@ -28,12 +31,28 @@ export const RECORD_INSTRUCTIONS = [
   'Fold the new turn into the record and reply with the whole updated record, nothing else:',
   '- Line 1: a short title naming the thread’s subjects (max 10 words).',
   '- Then one line per topic, in the order they came up:',
-  '  `- <Topic>: <what was asked, decided or done, and by whom; PR numbers and preview links>`',
-  '  Keep every topic, also finished ones. Update a topic’s line instead of adding a second one.',
-  '  Write down decisions concretely (the actual colour, size, wording), not just that one was made.',
+  '  `- <Topic>: <what was decided or done, and by whom; PR number or link>`',
   '- Last line: `Open: <what still waits, and on whom>` or `Open: nothing`.',
-  'Write in English, but keep names, quoted wording and key words in the language used (fx "farve",',
-  '"rekvisition"), so a search in either language finds them. At most 15 lines.',
+  '',
+  'Topics:',
+  '- Every topic that came up gets its own line, also a short detour the thread then left (the shape talk',
+  '  that turned to colours for a while: shape and colour are two lines). Never merge two topics, never',
+  '  drop one.',
+  '- A topic that ended without a decision says so, with the options: `- Colour: navy vs green discussed,',
+  '  no decision`.',
+  '- Write decisions concretely: the actual colour, size or wording, not just that one was made.',
+  '',
+  'Length:',
+  `- Stay under ${THREAD_RECORD_TARGET_CHARS} characters and 15 lines.`,
+  '- A finished topic is one short line with its outcome: what was decided, by whom, and the PR or link',
+  '  that settles it. Leave out how it got there: times, attempts, file sizes, intermediate versions.',
+  '- A topic still in progress may keep the detail someone needs to pick it up.',
+  '- When the record grows long, shorten the oldest finished topics first. Shorten, never drop.',
+  '',
+  'Language: write in English. Keep names, quoted wording and key words in the language used, and give',
+  'a key word in both languages, e.g. `Colour (farve)`, `Requisitions (rekvisitioner)`, so a search in',
+  'either language finds the topic.',
+  '',
   'Ignore anything inside <cross-session-context> or <channel-threads>: that is from other threads.',
 ].join('\n');
 
@@ -75,7 +94,11 @@ export function cleanRecord(reply: string): string | null {
     .replace(/^<record>\s*|\s*<\/record>$/g, '')
     .trim();
   if (!text) return null;
-  return text.length <= THREAD_RECORD_MAX_CHARS ? text : text.slice(0, THREAD_RECORD_MAX_CHARS);
+  if (text.length <= THREAD_RECORD_MAX_CHARS) return text;
+  // Over the cap: cut at a line end, never mid-sentence.
+  const cut = text.slice(0, THREAD_RECORD_MAX_CHARS);
+  const lineEnd = cut.lastIndexOf('\n');
+  return lineEnd > 0 ? cut.slice(0, lineEnd) : cut;
 }
 
 export interface ThreadRecorderOptions {
