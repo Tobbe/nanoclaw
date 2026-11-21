@@ -22,6 +22,7 @@ import { withExistingMailboxSession } from '../../session-manager.js';
 import { formatLocalStamp } from '../../timezone.js';
 import type { CallerContext } from '../../cli/frame.js';
 import { ECHO_CONCURRENCY } from './config.js';
+import { mayReadAgentGroup } from './dm-privacy.js';
 import { mapConcurrent } from './parallel.js';
 import { formatThreadRecords, listGroupThreadRecords, listThreadRecords } from './thread-records.js';
 
@@ -121,9 +122,15 @@ function parseMessage(raw: string): { text: string; sender: string; ambient: boo
   }
 }
 
-function groupOf(args: Record<string, unknown>, ctx: CallerContext): string {
-  if (ctx.caller === 'agent') return ctx.agentGroupId;
-  if (typeof args.group === 'string' && args.group) return args.group;
+/** The agent group to read: `--group` when given and allowed, else the caller's own. */
+async function groupOf(args: Record<string, unknown>, ctx: CallerContext): Promise<string> {
+  const asked = typeof args.group === 'string' && args.group ? args.group : undefined;
+  if (ctx.caller === 'agent') {
+    if (!asked || asked === ctx.agentGroupId) return ctx.agentGroupId;
+    if (await mayReadAgentGroup(ctx, asked)) return asked;
+    throw new Error(`agent group not found: ${asked}`);
+  }
+  if (asked) return asked;
   throw new Error('--group is required');
 }
 
@@ -140,7 +147,7 @@ async function readableConversations(
   const names = new Map(mgs.map((mg) => [mg.id, mg.is_group ? `#${mg.name || mg.platform_id}` : mg.name || 'DM']));
   if (ctx.caller !== 'agent') return { allows: () => true, names };
   const shared = new Set(mgs.filter((mg) => mg.is_group).map((mg) => mg.id));
-  shared.add(ctx.messagingGroupId);
+  if (agentGroupId === ctx.agentGroupId) shared.add(ctx.messagingGroupId);
   return { allows: (mgId) => mgId !== null && shared.has(mgId), names };
 }
 
@@ -150,7 +157,7 @@ export async function sessionSearch(args: Record<string, unknown>, ctx: CallerCo
   if (terms.length === 0) throw new Error('--query needs at least one word');
   const limitRaw = Number(args.limit ?? SEARCH_DEFAULT_LIMIT);
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : SEARCH_DEFAULT_LIMIT;
-  const agentGroupId = groupOf(args, ctx);
+  const agentGroupId = await groupOf(args, ctx);
 
   const readable = await readableConversations(agentGroupId, ctx);
   const records = (await listGroupThreadRecords(agentGroupId)).filter((r) => readable.allows(r.messaging_group_id));
@@ -210,7 +217,7 @@ export function formatSearchHits(hits: SearchHit[], timezone: string = TIMEZONE)
  */
 export async function sessionRecords(args: Record<string, unknown>, ctx: CallerContext): Promise<string> {
   if (args.all === true || args.all === 'true') {
-    const agentGroupId = groupOf(args, ctx);
+    const agentGroupId = await groupOf(args, ctx);
     const readable = await readableConversations(agentGroupId, ctx);
     const ownSession = ctx.caller === 'agent' ? ctx.sessionId : undefined;
     const rows = (await listGroupThreadRecords(agentGroupId)).filter(

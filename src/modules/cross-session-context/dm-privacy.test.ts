@@ -7,6 +7,7 @@ vi.mock('../../config.js', async () => {
 });
 
 import { closeDb, createAgentGroup, initTestDb, runMigrations } from '../../db/index.js';
+import { ensureContainerConfig, updateContainerConfigScalars } from '../../db/container-configs.js';
 import { createMessagingGroup, createMessagingGroupAgent } from '../../db/messaging-groups.js';
 import { createSession, getSession } from '../../db/sessions.js';
 import { initSessionFolder, writeSessionMessage } from '../../session-manager.js';
@@ -14,6 +15,8 @@ import type { CallerContext } from '../../cli/frame.js';
 import type { Session } from '../../types.js';
 import { privateDmEnvironment } from './dm-privacy.js';
 import { sessionFile, sessionHistory } from './history.js';
+import { sessionRecords } from './search.js';
+import { saveThreadRecord } from './thread-records.js';
 
 const TEST_DIR = '/tmp/nanoclaw-test-dm-privacy';
 const TEAM = 'ag-team';
@@ -124,5 +127,31 @@ describe('DM privacy', () => {
     expect(await env('s-website')).toEqual({});
     // A personal agent with only a DM keeps its shared memory and archive.
     expect(await env('s-tobbe')).toEqual({});
+  });
+});
+
+describe('a global-scope personal agent reading the team', () => {
+  beforeEach(async () => {
+    await ensureContainerConfig(SOLO);
+    await updateContainerConfigScalars(SOLO, { cli_scope: 'global' });
+    await ensureContainerConfig(TEAM);
+    await saveThreadRecord((await getSession('s-website')) as Session, 'Buttons\n- Colour (farve): navy');
+    await saveThreadRecord((await getSession('s-lise')) as Session, 'Lise private thread');
+  });
+
+  it('gets the team’s channel records and threads, never the team’s DMs', async () => {
+    const me = caller('s-tobbe', 'mg-dm-tobbe', SOLO);
+    const all = await sessionRecords({ all: true, group: TEAM }, me);
+    expect(all).toContain('#mg-website · s-website]\nButtons');
+    expect(all).not.toContain('Lise private');
+    const rows = await sessionHistory({ id: 's-website' }, me);
+    expect(rows.map((r) => r.text)).toContain('said in s-website');
+    await expect(sessionHistory({ id: 's-lise' }, me)).rejects.toThrow('session not found');
+  });
+
+  it('refuses a group-scope agent naming another group', async () => {
+    const teamThread = caller('s-website', 'mg-website');
+    await expect(sessionRecords({ all: true, group: SOLO }, teamThread)).rejects.toThrow('agent group not found');
+    await expect(sessionHistory({ id: 's-tobbe' }, teamThread)).rejects.toThrow('session not found');
   });
 });

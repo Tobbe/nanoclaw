@@ -121,7 +121,12 @@ registerResource({
           description: `Max hits (default ${SEARCH_DEFAULT_LIMIT}).`,
           default: SEARCH_DEFAULT_LIMIT,
         },
-        { name: 'group', type: 'string', description: 'Agent group id (host only; agents search their own).' },
+        {
+          name: 'group',
+          type: 'string',
+          description:
+            'Agent group id. Agents search their own; a global-scope agent may name another group (its shared channels only).',
+        },
       ],
       // Self-scoped in the handler, like history.
       handler: async (args, ctx) => await sessionSearch(args, ctx),
@@ -143,7 +148,12 @@ registerResource({
           description:
             'Records of every conversation you can read (this one and the shared channels), not just this one.',
         },
-        { name: 'group', type: 'string', description: 'Agent group id (host only).' },
+        {
+          name: 'group',
+          type: 'string',
+          description:
+            'Agent group id: required on the host; with --all, a global-scope agent may name another group (its shared channels only).',
+        },
         { name: 'conversation', type: 'string', description: 'Messaging group id (host only).' },
       ],
       handler: async (args, ctx) => await sessionRecords(args, ctx),
@@ -157,7 +167,14 @@ registerResource({
         'so the words need not match. Runs inside your container; open a named thread with `ncl sessions history <id>`, ' +
         'and use `ncl sessions search` for exact wording.',
       examples: [`ncl sessions recall --question "hvad sagde vi om farverne på knapperne?"`],
-      args: [{ name: 'question', type: 'string', description: 'What you want to know.', required: true }],
+      args: [
+        { name: 'question', type: 'string', description: 'What you want to know.', required: true },
+        {
+          name: 'group',
+          type: 'string',
+          description: "Another agent group's threads to ask about (global-scope agents only; its shared channels).",
+        },
+      ],
       // The container's ncl answers this itself (the host has no model
       // access); a request reaching the host came from somewhere else.
       handler: async () => {

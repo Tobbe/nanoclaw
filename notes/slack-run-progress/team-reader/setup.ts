@@ -94,7 +94,11 @@ step(`copy team-messages.ts → groups/${agent.folder}/tools/`, () => {
 step(`add the Team channels section to groups/${agent.folder}/instructions.prepend.md`, () => {
   const file = path.join(groupDir, 'instructions.prepend.md');
   let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-  const section = fs.readFileSync(path.join(HERE, 'instructions.md'), 'utf8').replaceAll('{{owner}}', owner).trim();
+  const section = fs
+    .readFileSync(path.join(HERE, 'instructions.md'), 'utf8')
+    .replaceAll('{{owner}}', owner)
+    .replaceAll('{{team}}', teamId)
+    .trim();
   const start = text.indexOf(START);
   const end = text.indexOf(END);
   if (start >= 0 && end > start) {

@@ -13,6 +13,8 @@
  *     DMs and shared memory (NANOCLAW_PRIVATE_DM, read by the runner).
  * An agent group with only DMs (a personal agent) is left as it was.
  */
+import type { CallerContext } from '../../cli/frame.js';
+import { getContainerConfig } from '../../db/container-configs.js';
 import { getMessagingGroup, getMessagingGroupsByAgentGroup } from '../../db/messaging-groups.js';
 import type { Session } from '../../types.js';
 
@@ -37,4 +39,16 @@ export async function privateDmEnvironment(session: Session): Promise<Record<str
   const wired = await getMessagingGroupsByAgentGroup(session.agent_group_id);
   if (!wired.some((w) => w.is_group === 1)) return {};
   return { NANOCLAW_PRIVATE_DM: '1', NANOCLAW_CONVERSATIONS_DIR: PRIVATE_DM_CONVERSATIONS_DIR };
+}
+
+/**
+ * Whether the caller may read another agent group's threads. An agent reads
+ * its own group; a `global`-scope agent (the owner's personal agent) may also
+ * read other groups, which is how a personal DM agent recalls the team
+ * channels. Either way, other people's DMs stay out (isOtherConversationsDm
+ * and search.ts's readable conversations).
+ */
+export async function mayReadAgentGroup(ctx: CallerContext, agentGroupId: string): Promise<boolean> {
+  if (ctx.caller !== 'agent' || agentGroupId === ctx.agentGroupId) return true;
+  return (await getContainerConfig(ctx.agentGroupId))?.cli_scope === 'global';
 }

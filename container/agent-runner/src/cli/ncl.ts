@@ -260,7 +260,8 @@ async function main(): Promise<void> {
       const text = await recall(typeof requestArgs.question === 'string' ? requestArgs.question : '', {
         fetchRecords: async () => {
           const id = generateId();
-          await writeRequest(mailbox, { id, command: 'sessions-records', args: { all: true } });
+          const group = typeof requestArgs.group === 'string' && requestArgs.group ? { group: requestArgs.group } : {};
+          await writeRequest(mailbox, { id, command: 'sessions-records', args: { all: true, ...group } });
           const resp = await pollResponse(mailbox, id, 30_000);
           if (!resp) throw new Error('fetching thread records timed out after 30s');
           if (!resp.ok) throw new Error(resp.error.message);
