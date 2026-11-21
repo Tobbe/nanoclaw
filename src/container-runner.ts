@@ -59,6 +59,7 @@ import { releaseGatewaySession, type GatewaySessionControl } from './gateway-ses
 import { initGroupFilesystem } from './group-init.js';
 import { getAgentMailbox } from './mailbox/index.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
+import { privateDmEnvironment } from './modules/cross-session-context/dm-privacy.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
 // Provider contracts use a separate barrel so update-skills identity detection
@@ -470,6 +471,7 @@ async function spawnContainer(session: Session): Promise<void> {
   const containerName = `nanoclaw-v2-${agentGroup.folder}-${Date.now()}`;
   const mounts = await buildMounts(agentGroup, session, containerConfig, provider, contribution, surfaces);
   const mailboxEnvironment = await mailbox.runnerEnvironment(mailboxKey);
+  const sessionEnvironment = await privateDmEnvironment(session);
 
   const driver = getSessionDriver();
   // Core calls the same idempotent provider operation for new and surviving
@@ -510,6 +512,7 @@ async function spawnContainer(session: Session): Promise<void> {
       contribution,
       gateway,
       mailboxEnvironment,
+      sessionEnvironment,
     });
 
     log.info('Spawning session', { sessionId: session.id, agentGroup: agentGroup.name, containerName });
@@ -1394,6 +1397,8 @@ export interface ComposeSessionSpecInput {
   gateway: GatewayContribution;
   /** Non-secret configuration supplied by the selected mailbox implementation. */
   mailboxEnvironment: Record<string, string>;
+  /** Non-secret per-session settings (e.g. DM privacy, see cross-session-context/dm-privacy.ts). */
+  sessionEnvironment?: Record<string, string>;
 }
 
 /**
@@ -1420,6 +1425,7 @@ export function composeSessionSpec(input: ComposeSessionSpecInput): SessionSpec 
   const env: Record<string, string> = {
     TZ: containerConfig.timezone ?? TIMEZONE,
     ...mailboxEnvironment,
+    ...(input.sessionEnvironment ?? {}),
   };
   // The contributed lane (ContainerSpec.contributedEnv): registry-sourced env,
   // exempt from the credential-NAME check and still refused credential VALUES.

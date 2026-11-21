@@ -69,8 +69,34 @@ export function buildSystemPromptAddendum(assistantName?: string, mode: SessionM
 
   sections.push(buildDestinationsSection(mode));
   if (mode.kind === 'chat') sections.push(buildReadingSection());
+  const privateDm = privateDmLines();
+  if (mode.kind === 'chat' && privateDm.length) sections.push(privateDm.join('\n').trim());
 
   return sections.join('\n\n');
+}
+
+/** Set by the host for a DM of an agent that also serves shared channels. */
+export const PRIVATE_DM_ENV = 'NANOCLAW_PRIVATE_DM';
+
+/**
+ * DM discretion: this agent also serves shared channels, and its memory and
+ * workspace are read from all of them. The host already keeps this DM's
+ * transcript, files and archives out of other threads' reach; what is left
+ * is the agent's own judgment, which these lines set.
+ */
+export function privateDmLines(env: NodeJS.ProcessEnv = process.env): string[] {
+  if (env[PRIVATE_DM_ENV] !== '1') return [];
+  return [
+    '## This DM is private',
+    '',
+    'This is a one-to-one DM, but you also serve shared channels, and your memory and workspace files are read in all of them. Keep what this person tells you here between the two of you, as a trusted colleague would:',
+    '',
+    "- Don't repeat, quote or hint at it in a channel or in anyone else's DM, unless they ask you to.",
+    "- Don't write it to `/workspace/agent/memory/` or other files under `/workspace/agent/`: every conversation reads those. Keep notes about this DM in `/workspace/dm-notes.md` instead, which only this DM sees. Facts meant for the whole team (a decision, a convention) can go to shared memory only when this person says so.",
+    "- If it matters to others, suggest they bring it up themselves, or ask whether you may.",
+    '- This DM\'s past conversations are archived in `/workspace/conversations/`, not the shared folder.',
+    '',
+  ];
 }
 
 /**

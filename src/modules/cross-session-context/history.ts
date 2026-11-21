@@ -16,6 +16,7 @@ import { isSafeAttachmentName } from '../../attachment-safety.js';
 import { TIMEZONE } from '../../config.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getSession } from '../../db/sessions.js';
+import { isOtherConversationsDm } from './dm-privacy.js';
 import { sessionDir, withExistingMailboxSession } from '../../session-manager.js';
 import { formatLocalStamp } from '../../timezone.js';
 import type { CallerContext } from '../../cli/frame.js';
@@ -79,7 +80,12 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
 
   const session = await getSession(sessionId);
   // Self-scope (see header): cross-group agents get "not found", never "forbidden".
-  if (!session || (ctx.caller === 'agent' && session.agent_group_id !== ctx.agentGroupId)) {
+  if (
+    !session ||
+    (ctx.caller === 'agent' &&
+      (session.agent_group_id !== ctx.agentGroupId || (await isOtherConversationsDm(session, ctx.messagingGroupId))))
+  ) {
+    // Another person's DM reads as not found: its existence is private too.
     throw new Error(`session not found: ${sessionId}`);
   }
 
@@ -152,7 +158,13 @@ export async function sessionFile(
   }
 
   const source = await getSession(sessionId);
-  if (!source || source.agent_group_id !== ctx.agentGroupId) throw new Error(`session not found: ${sessionId}`);
+  if (
+    !source ||
+    source.agent_group_id !== ctx.agentGroupId ||
+    (await isOtherConversationsDm(source, ctx.messagingGroupId))
+  ) {
+    throw new Error(`session not found: ${sessionId}`);
+  }
 
   const from = AnchoredDir.open(sessionDir(source.agent_group_id, source.id), ['inbox', folder]);
   if (!from) throw new Error(`file not found: ${args.path as string}`);

@@ -137,3 +137,14 @@ describe('buildSystemPromptAddendum — reading messages', () => {
     expect(prompt).not.toContain('cross-session-context');
   });
 });
+
+describe('privateDmLines', () => {
+  it('asks for discretion only in a DM the host marked private', async () => {
+    const { privateDmLines } = await import('./destinations.js');
+    expect(privateDmLines({})).toEqual([]);
+    const text = privateDmLines({ NANOCLAW_PRIVATE_DM: '1' }).join('\n');
+    expect(text).toContain('## This DM is private');
+    expect(text).toContain('/workspace/dm-notes.md');
+    expect(text).toContain('/workspace/conversations/');
+  });
+});

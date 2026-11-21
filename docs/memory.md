@@ -109,7 +109,24 @@ The agent can also run:
 
 Across conversations, an agent reads its own conversation plus the group's
 shared ones (channels, rooms), never another person's DM. This applies to
-`records --all`, recall and search.
+`records --all`, recall, search, `ncl sessions history` and `ncl sessions file`
+(another DM reads as "session not found").
+
+## DMs to an agent that also serves channels
+
+An agent group's memory and workspace are shared by all its conversations. When
+a DM is wired to an agent that also serves a channel or room, the host keeps the
+DM as private as telling a colleague (`src/modules/cross-session-context/dm-privacy.ts`):
+
+- other threads can't open, search or recall it (above);
+- its conversation archives go to the session folder (`/workspace/conversations/`)
+  instead of the shared `conversations/`;
+- the agent gets a "This DM is private" section: keep what is said there out of
+  channels, other DMs and shared memory, with private notes in
+  `/workspace/dm-notes.md`.
+
+The last part rests on the model's judgment. An agent with only DMs (a personal
+agent) keeps its usual shared memory and archive.
 
 ## Migrating older memory
 
