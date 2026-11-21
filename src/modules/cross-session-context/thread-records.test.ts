@@ -18,7 +18,7 @@ vi.mock('../../session-manager.js', () => ({
 const { closeDb, initTestDb } = await import('../../db/connection.js');
 const { runMigrations } = await import('../../db/migrations/index.js');
 const { createAgentGroup } = await import('../../db/agent-groups.js');
-const { createMessagingGroup } = await import('../../db/messaging-groups.js');
+const { createMessagingGroup, createMessagingGroupAgent } = await import('../../db/messaging-groups.js');
 const { createSession } = await import('../../db/sessions.js');
 const records = await import('./thread-records.js');
 const search = await import('./search.js');
@@ -71,6 +71,21 @@ beforeEach(async () => {
   await createMessagingGroup(mg as any);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await createMessagingGroup({ ...mg, id: 'mg-dm', platform_id: 'slack:DTOBBE', is_group: 0 } as any);
+  for (const mgId of [mg.id, 'mg-dm']) {
+    await createMessagingGroupAgent({
+      id: `w-${mgId}`,
+      messaging_group_id: mgId,
+      agent_group_id: agentGroup.id,
+      engage_mode: 'mention',
+      engage_pattern: null,
+      sender_scope: 'all',
+      ignored_message_policy: 'drop',
+      session_mode: 'per-thread',
+      priority: 0,
+      created_at: '2026-11-01T00:00:00.000Z',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+  }
   for (const s of [session('s-buttons'), session('s-legal'), session('s-new'), session('s-dm', 'mg-dm')]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await createSession(s as any);
@@ -166,6 +181,26 @@ describe('ncl sessions search', () => {
     histories['s-buttons'] = { inbound: [chat('2026-11-14T10:00:00.000Z', 'decolor the page')], outbound: [] };
     expect(await search.sessionSearch({ query: 'color' }, agent)).toEqual([]);
     await expect(search.sessionSearch({ query: ' ' }, agent)).rejects.toThrow('at least one word');
+  });
+
+  it('keeps other people’s DMs out of an agent’s search and records --all', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = (id: string, mgId?: string) => session(id, mgId) as any;
+    await records.saveThreadRecord(s('s-buttons'), BUTTONS, new Date(NOW - 3_000_000));
+    await records.saveThreadRecord(s('s-dm', 'mg-dm'), 'Private DM thread about buttons', new Date(NOW));
+    histories['s-dm'] = { inbound: [chat('2026-11-15T10:00:00.000Z', 'buttons in private')], outbound: [] };
+
+    const hits = await search.sessionSearch({ query: 'buttons' }, agent);
+    expect(hits.map((h) => h.sessionId)).toEqual(['s-buttons']);
+    const all = await search.sessionRecords({ all: true }, agent);
+    expect(all).toContain('#website · s-buttons]\nButtons');
+    expect(all).not.toContain('Private DM');
+
+    // The DM's own thread still sees its own conversation, and the channels.
+    const fromDm = { ...agent, sessionId: 's-dm2', messagingGroupId: 'mg-dm' };
+    const dmAll = await search.sessionRecords({ all: true }, fromDm);
+    expect(dmAll).toContain('Private DM');
+    expect(dmAll).toContain('Buttons');
   });
 
   it('lists the records of the caller’s conversation without its own', async () => {

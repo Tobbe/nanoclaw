@@ -115,12 +115,19 @@ export async function listGroupThreadRecords(agentGroupId: string): Promise<Thre
  * by when it was last touched and its session id (for `ncl sessions history`).
  * Stops before the size cap rather than cutting a record in half.
  */
-export function formatThreadRecords(rows: ThreadRecordRow[], timezone: string = TIMEZONE): string {
+export function formatThreadRecords(
+  rows: ThreadRecordRow[],
+  timezone: string = TIMEZONE,
+  options: { maxChars?: number; conversationNames?: Map<string, string> } = {},
+): string {
+  const maxChars = options.maxChars ?? THREAD_RECORDS_BLOCK_MAX_CHARS;
   const parts: string[] = [];
   let size = 0;
   for (const row of rows) {
-    const entry = `[${formatLocalStamp(new Date(row.updated_at), timezone)} · ${row.session_id}]\n${row.record.trim()}`;
-    if (size + entry.length > THREAD_RECORDS_BLOCK_MAX_CHARS) break;
+    const where = options.conversationNames?.get(row.messaging_group_id);
+    const head = [formatLocalStamp(new Date(row.updated_at), timezone), ...(where ? [where] : []), row.session_id];
+    const entry = `[${head.join(' · ')}]\n${row.record.trim()}`;
+    if (size + entry.length > maxChars) break;
     parts.push(entry);
     size += entry.length + 2;
   }

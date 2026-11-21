@@ -122,14 +122,15 @@ export class ThreadRecorder {
   }
 }
 
-/** Model for record updates: small and quick, the record is a few lines. */
+/** Model for record updates and recall: small and quick. */
 export const THREAD_RECORD_MODEL = 'haiku';
 
 /**
- * One-shot summarizer on the Claude Agent SDK: no tools, no settings files,
- * no saved session. Goes out through the same gateway env as the agent.
+ * One prompt on the small model via the Claude Agent SDK: no tools, no
+ * settings files, no saved session. Goes out through the same gateway env
+ * as the agent. Used for record updates and `ncl sessions recall`.
  */
-export async function summarizeWithClaude(prompt: string): Promise<string> {
+export async function askSmallModel(prompt: string): Promise<string> {
   const { query } = await import('@anthropic-ai/claude-agent-sdk');
   let text = '';
   for await (const message of query({

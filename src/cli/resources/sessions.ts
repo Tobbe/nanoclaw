@@ -132,13 +132,37 @@ registerResource({
       description:
         'The records of the other threads in this conversation, newest first: what each thread discussed, what was decided, ' +
         'and what is still open and on whom. A new thread gets these at its start; run this for a fresh copy.',
-      examples: [`ncl sessions records`],
+      examples: [
+        `ncl sessions records`,
+        `# Every conversation you can read, not just this one:\nncl sessions records --all`,
+      ],
       args: [
+        {
+          name: 'all',
+          type: 'boolean',
+          description:
+            'Records of every conversation you can read (this one and the shared channels), not just this one.',
+        },
         { name: 'group', type: 'string', description: 'Agent group id (host only).' },
         { name: 'conversation', type: 'string', description: 'Messaging group id (host only).' },
       ],
       handler: async (args, ctx) => await sessionRecords(args, ctx),
       formatHuman: (data) => String(data),
+    },
+    recall: {
+      access: 'open',
+      description:
+        'Ask what was discussed, in plain words and any language ("what did we say about the colours?"). ' +
+        'A small model reads the records of every thread you can read and answers by meaning, naming the threads, ' +
+        'so the words need not match. Runs inside your container; open a named thread with `ncl sessions history <id>`, ' +
+        'and use `ncl sessions search` for exact wording.',
+      examples: [`ncl sessions recall --question "hvad sagde vi om farverne på knapperne?"`],
+      args: [{ name: 'question', type: 'string', description: 'What you want to know.', required: true }],
+      // The container's ncl answers this itself (the host has no model
+      // access); a request reaching the host came from somewhere else.
+      handler: async () => {
+        throw new Error('recall runs inside agent containers (it needs the model gateway)');
+      },
     },
   },
 });

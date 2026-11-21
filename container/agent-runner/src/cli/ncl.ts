@@ -12,6 +12,8 @@ import '../modules/index.js';
 import { getAgentMailbox, readMailboxContext } from '../mailbox/index.js';
 import type { AgentMailbox } from '../mailbox/types.js';
 
+import { askSmallModel } from '../thread-record.js';
+import { RECALL_COMMAND, recall } from './recall.js';
 import { readStdinJsonArgs, StdinJsonInputError } from './stdin-json.js';
 
 // ---------------------------------------------------------------------------
@@ -253,6 +255,23 @@ async function main(): Promise<void> {
   const mailbox = getAgentMailbox();
   await mailbox.start(context);
   try {
+    if (command === RECALL_COMMAND) {
+      // Answered here: the host has the records but no model access.
+      const text = await recall(typeof requestArgs.question === 'string' ? requestArgs.question : '', {
+        fetchRecords: async () => {
+          const id = generateId();
+          await writeRequest(mailbox, { id, command: 'sessions-records', args: { all: true } });
+          const resp = await pollResponse(mailbox, id, 30_000);
+          if (!resp) throw new Error('fetching thread records timed out after 30s');
+          if (!resp.ok) throw new Error(resp.error.message);
+          return resp.human ?? String(resp.data);
+        },
+        ask: askSmallModel,
+      });
+      process.stdout.write(json ? JSON.stringify({ ok: true, data: text }, null, 2) + '\n' : text + '\n');
+      return;
+    }
+
     const requestId = generateId();
     await writeRequest(mailbox, { id: requestId, command, args: requestArgs });
     const resp = await pollResponse(mailbox, requestId, 30_000);

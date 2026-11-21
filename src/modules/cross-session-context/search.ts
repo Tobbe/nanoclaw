@@ -10,9 +10,13 @@
  * more distinct words matched rank higher, then newer first. Each hit names
  * its session, so `ncl sessions history <id>` opens the full thread.
  *
- * Scoped like history: an agent searches only its own agent group.
+ * Scoped like history: an agent searches only its own agent group. Within
+ * it, an agent sees its own conversation plus the group's shared ones
+ * (channels, rooms), never another person's DM: what was said privately
+ * must not surface in a channel.
  */
 import { TIMEZONE } from '../../config.js';
+import { getMessagingGroupsByAgentGroup } from '../../db/messaging-groups.js';
 import { getSessionsByAgentGroup } from '../../db/sessions.js';
 import { withExistingMailboxSession } from '../../session-manager.js';
 import { formatLocalStamp } from '../../timezone.js';
@@ -22,6 +26,8 @@ import { mapConcurrent } from './parallel.js';
 import { formatThreadRecords, listGroupThreadRecords, listThreadRecords } from './thread-records.js';
 
 export const SEARCH_DEFAULT_LIMIT = 15;
+/** Size cap of the group-wide records list (`records --all`, read by recall). */
+export const ALL_RECORDS_MAX_CHARS = 300_000;
 /** Messages read per session and direction. */
 const SEARCH_SCAN_PER_SESSION = 2_000;
 const SNIPPET_CHARS = 240;
@@ -121,6 +127,23 @@ function groupOf(args: Record<string, unknown>, ctx: CallerContext): string {
   throw new Error('--group is required');
 }
 
+/**
+ * The conversations a caller may read across: everything for the host; for
+ * an agent, its own conversation and the group's shared (non-DM) ones.
+ * Also names them, for record headers.
+ */
+async function readableConversations(
+  agentGroupId: string,
+  ctx: CallerContext,
+): Promise<{ allows: (mgId: string | null) => boolean; names: Map<string, string> }> {
+  const mgs = await getMessagingGroupsByAgentGroup(agentGroupId);
+  const names = new Map(mgs.map((mg) => [mg.id, mg.is_group ? `#${mg.name || mg.platform_id}` : mg.name || 'DM']));
+  if (ctx.caller !== 'agent') return { allows: () => true, names };
+  const shared = new Set(mgs.filter((mg) => mg.is_group).map((mg) => mg.id));
+  shared.add(ctx.messagingGroupId);
+  return { allows: (mgId) => mgId !== null && shared.has(mgId), names };
+}
+
 export async function sessionSearch(args: Record<string, unknown>, ctx: CallerContext): Promise<SearchHit[]> {
   const query = typeof args.query === 'string' ? args.query : '';
   const terms = queryTerms(query);
@@ -129,7 +152,8 @@ export async function sessionSearch(args: Record<string, unknown>, ctx: CallerCo
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : SEARCH_DEFAULT_LIMIT;
   const agentGroupId = groupOf(args, ctx);
 
-  const records = await listGroupThreadRecords(agentGroupId);
+  const readable = await readableConversations(agentGroupId, ctx);
+  const records = (await listGroupThreadRecords(agentGroupId)).filter((r) => readable.allows(r.messaging_group_id));
   const titles = new Map(records.map((r) => [r.session_id, r.record.split('\n')[0].trim()]));
   const candidates: Candidate[] = records.map((r) => ({
     timestamp: r.updated_at,
@@ -139,7 +163,7 @@ export async function sessionSearch(args: Record<string, unknown>, ctx: CallerCo
     text: r.record,
   }));
 
-  const sessions = await getSessionsByAgentGroup(agentGroupId);
+  const sessions = (await getSessionsByAgentGroup(agentGroupId)).filter((s) => readable.allows(s.messaging_group_id));
   const reads = await mapConcurrent(sessions, ECHO_CONCURRENCY, (session) =>
     withExistingMailboxSession(agentGroupId, session.id, (mailbox) => ({
       inbound: mailbox.getInboundHistory(SEARCH_SCAN_PER_SESSION),
@@ -179,8 +203,24 @@ export function formatSearchHits(hits: SearchHit[], timezone: string = TIMEZONE)
     .join('\n\n');
 }
 
-/** `ncl sessions records`: the records of the caller's conversation's threads. */
+/**
+ * `ncl sessions records`: the records of the caller's conversation's threads.
+ * With `--all`, every conversation the caller may read (see
+ * readableConversations), each headed with its conversation's name.
+ */
 export async function sessionRecords(args: Record<string, unknown>, ctx: CallerContext): Promise<string> {
+  if (args.all === true || args.all === 'true') {
+    const agentGroupId = groupOf(args, ctx);
+    const readable = await readableConversations(agentGroupId, ctx);
+    const ownSession = ctx.caller === 'agent' ? ctx.sessionId : undefined;
+    const rows = (await listGroupThreadRecords(agentGroupId)).filter(
+      (r) => r.session_id !== ownSession && readable.allows(r.messaging_group_id),
+    );
+    return (
+      formatThreadRecords(rows, TIMEZONE, { maxChars: ALL_RECORDS_MAX_CHARS, conversationNames: readable.names }) ||
+      'No thread records yet.'
+    );
+  }
   if (ctx.caller !== 'agent') {
     if (typeof args.group !== 'string' || typeof args.conversation !== 'string') {
       throw new Error('--group and --conversation (messaging group id) are required');

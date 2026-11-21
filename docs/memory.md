@@ -95,10 +95,21 @@ thread starts with the records of its conversation's other threads from the
 last 60 days, rendered as `<channel-threads>`. Only records from the same
 messaging group are shared, so a channel never sees a DM's threads.
 
-The agent can also run `ncl sessions records` for a fresh copy, and
-`ncl sessions search --query "<words>"` to find where something was said in any
-of its conversations (messages and records; word-start matches, so it searches
-in both languages with synonyms). `ncl sessions history <id>` opens a thread.
+The agent can also run:
+
+- `ncl sessions records` for a fresh copy (`--all` for every conversation it can
+  read, each record headed with its conversation's name);
+- `ncl sessions recall --question "<question>"` to ask by meaning, in any
+  language: the container's ncl fetches `records --all` and has Haiku pick the
+  threads that bear on the question (the host has no model access, so this one
+  runs in the container);
+- `ncl sessions search --query "<words>"` to find exact wording in messages and
+  records (word-start matches, so it searches in both languages with synonyms);
+- `ncl sessions history <id>` to open a thread.
+
+Across conversations, an agent reads its own conversation plus the group's
+shared ones (channels, rooms), never another person's DM. This applies to
+`records --all`, recall and search.
 
 ## Migrating older memory
 
