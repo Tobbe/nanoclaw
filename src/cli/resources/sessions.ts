@@ -8,8 +8,10 @@ import {
 import {
   formatSearchHits,
   SEARCH_DEFAULT_LIMIT,
+  sessionBackfillCandidates,
   sessionRecords,
   sessionSearch,
+  type BackfillCandidate,
   type SearchHit,
 } from '../../modules/cross-session-context/search.js';
 import { registerResource } from '../crud.js';
@@ -158,6 +160,43 @@ registerResource({
       ],
       handler: async (args, ctx) => await sessionRecords(args, ctx),
       formatHuman: (data) => String(data),
+    },
+    'backfill-candidates': {
+      access: 'open',
+      description:
+        'The threads you can read that have no thread record yet, oldest first. ' +
+        'Used by `ncl sessions backfill-records`, which writes one for each.',
+      examples: [`ncl sessions backfill-candidates`],
+      args: [
+        {
+          name: 'group',
+          type: 'string',
+          description:
+            'Agent group id: required on the host; a global-scope agent may name another group (its shared channels only).',
+        },
+      ],
+      handler: async (args, ctx) => await sessionBackfillCandidates(args, ctx),
+      formatHuman: (data) =>
+        (data as BackfillCandidate[]).map((c) => `${c.sessionId}  ${c.conversation}  ${c.createdAt}`).join('\n') ||
+        'Every thread has a record.',
+    },
+    'backfill-records': {
+      access: 'open',
+      description:
+        'Write thread records for the threads that have none (see backfill-candidates): a small model reads each ' +
+        'transcript and writes its record, as for live threads. Never replaces an existing record. ' +
+        'Runs inside your container and can take several minutes; give it a long timeout.',
+      examples: [`ncl sessions backfill-records`],
+      args: [
+        {
+          name: 'group',
+          type: 'string',
+          description: 'Another agent group to backfill (global-scope agents only; its shared channels).',
+        },
+      ],
+      handler: async () => {
+        throw new Error('backfill-records runs inside agent containers (it needs the model gateway)');
+      },
     },
     recall: {
       access: 'open',

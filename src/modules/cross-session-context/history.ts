@@ -37,6 +37,8 @@ export interface HistoryRow {
    * (`inbox/<folder>/<name>`). `ncl sessions file <id> <path>` fetches one.
    */
   attachments?: string[];
+  /** An ambient copy of another thread (cross-session context), not this thread's own message. */
+  ambient?: true;
 }
 
 function cell(value: string): string {
@@ -45,7 +47,7 @@ function cell(value: string): string {
   return value.replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, HISTORY_TEXT_MAX_CHARS);
 }
 
-function parseText(raw: string): { text: string; sender: string | null; attachments: string[] } {
+function parseText(raw: string): { text: string; sender: string | null; attachments: string[]; ambient?: true } {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const text =
@@ -59,7 +61,12 @@ function parseText(raw: string): { text: string; sender: string | null; attachme
           .map((a) => a.localPath)
           .filter((p): p is string => typeof p === 'string' && p.startsWith('inbox/'))
       : [];
-    return { text, sender: typeof parsed.sender === 'string' ? parsed.sender : null, attachments };
+    return {
+      text,
+      sender: typeof parsed.sender === 'string' ? parsed.sender : null,
+      attachments,
+      ...(parsed.echo !== undefined ? { ambient: true as const } : {}),
+    };
   } catch {
     return { text: raw, sender: null, attachments: [] };
   }
@@ -100,7 +107,7 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
 
   if (history) {
     for (const r of history.inbound) {
-      const { text, sender, attachments } = parseText(r.content);
+      const { text, sender, attachments, ambient } = parseText(r.content);
       rows.push({
         timestamp: r.timestamp,
         direction: 'in',
@@ -108,6 +115,7 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
         sender: sender ?? '',
         text,
         ...(attachments.length > 0 ? { attachments } : {}),
+        ...(ambient ? { ambient } : {}),
       });
     }
     for (const r of history.outbound) {

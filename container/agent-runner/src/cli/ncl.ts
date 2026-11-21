@@ -13,6 +13,14 @@ import { getAgentMailbox, readMailboxContext } from '../mailbox/index.js';
 import type { AgentMailbox } from '../mailbox/types.js';
 
 import { askSmallModel } from '../thread-record.js';
+import {
+  BACKFILL_ACTION,
+  BACKFILL_COMMAND,
+  BACKFILL_HISTORY_LIMIT,
+  backfill,
+  type Candidate,
+  type TranscriptRow,
+} from './backfill.js';
 import { RECALL_COMMAND, recall } from './recall.js';
 import { readStdinJsonArgs, StdinJsonInputError } from './stdin-json.js';
 
@@ -255,16 +263,44 @@ async function main(): Promise<void> {
   const mailbox = getAgentMailbox();
   await mailbox.start(context);
   try {
+    /** One host request from inside this command; throws on error or timeout. */
+    const ask = async (cmd: string, args: Record<string, unknown>): Promise<ResponseFrame & { ok: true }> => {
+      const id = generateId();
+      await writeRequest(mailbox, { id, command: cmd, args });
+      const resp = await pollResponse(mailbox, id, 30_000);
+      if (!resp) throw new Error(`${cmd} timed out after 30s`);
+      if (!resp.ok) throw new Error(resp.error.message);
+      return resp;
+    };
+    const groupArg = typeof requestArgs.group === 'string' && requestArgs.group ? { group: requestArgs.group } : {};
+
+    if (command === BACKFILL_COMMAND) {
+      // Answered here, like recall: the host has the transcripts but no model access.
+      const summary = await backfill({
+        candidates: async () => (await ask('sessions-backfill-candidates', groupArg)).data as Candidate[],
+        history: async (id) =>
+          (await ask('sessions-history', { id, limit: BACKFILL_HISTORY_LIMIT })).data as TranscriptRow[],
+        ask: askSmallModel,
+        save: async (sessionId, record, lastAt) => {
+          await mailbox.run(() =>
+            mailbox.operations.writeMessageOut({
+              id: generateId(),
+              kind: 'system',
+              content: JSON.stringify({ action: BACKFILL_ACTION, sessionId, record, lastAt }),
+            }),
+          );
+        },
+        print: (line) => process.stdout.write(line + '\n'),
+      });
+      process.stdout.write(summary + '\n');
+      return;
+    }
+
     if (command === RECALL_COMMAND) {
       // Answered here: the host has the records but no model access.
       const text = await recall(typeof requestArgs.question === 'string' ? requestArgs.question : '', {
         fetchRecords: async () => {
-          const id = generateId();
-          const group = typeof requestArgs.group === 'string' && requestArgs.group ? { group: requestArgs.group } : {};
-          await writeRequest(mailbox, { id, command: 'sessions-records', args: { all: true, ...group } });
-          const resp = await pollResponse(mailbox, id, 30_000);
-          if (!resp) throw new Error('fetching thread records timed out after 30s');
-          if (!resp.ok) throw new Error(resp.error.message);
+          const resp = await ask('sessions-records', { all: true, ...groupArg });
           return resp.human ?? String(resp.data);
         },
         ask: askSmallModel,

@@ -17,10 +17,13 @@ import { TIMEZONE } from '../../config.js';
 import { getDb } from '../../db/connection.js';
 import { registerMigration } from '../../db/migrations/index.js';
 import { log } from '../../log.js';
+import type { CallerContext } from '../../cli/frame.js';
+import { getSession } from '../../db/sessions.js';
 import { withExistingMailboxSession } from '../../session-manager.js';
 import { formatLocalStamp } from '../../timezone.js';
 import type { AgentGroup, MessagingGroup, Session } from '../../types.js';
 import { ECHO_CHANNEL_TYPE } from './config.js';
+import { isOtherConversationsDm, mayReadAgentGroup } from './dm-privacy.js';
 
 /** Echo surface of the seeded block; the runner renders it as <channel-threads>. */
 export const THREAD_RECORDS_SURFACE = 'thread-records';
@@ -80,6 +83,63 @@ export async function saveThreadRecord(session: Session, record: string, now = n
     now.toISOString(),
   );
   return true;
+}
+
+/**
+ * Backfill: keep a record for a session that has none yet, stamped with the
+ * thread's own last activity so it ages like a live one. Never replaces a
+ * record (a live one may have landed meanwhile).
+ */
+export async function saveBackfilledThreadRecord(session: Session, record: string, lastAt: Date): Promise<boolean> {
+  if (!session.messaging_group_id) return false;
+  const text = record.trim().slice(0, THREAD_RECORD_MAX_CHARS);
+  if (!text) return false;
+  const stamp = Number.isFinite(lastAt.getTime()) && lastAt.getTime() <= Date.now() ? lastAt : new Date();
+  const result = await getDb().run(
+    `INSERT INTO thread_records (session_id, agent_group_id, messaging_group_id, thread_id, record, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (session_id) DO NOTHING`,
+    session.id,
+    session.agent_group_id,
+    session.messaging_group_id,
+    session.thread_id,
+    text,
+    stamp.toISOString(),
+  );
+  return (result?.changes ?? 0) > 0;
+}
+
+/**
+ * The host end of `thread_record_backfill`: `sender` hands in a record for
+ * another thread, `{ sessionId, record, lastAt }`. Saved only when that
+ * thread is readable from the sender (the `ncl sessions history` rules) and
+ * has no record yet. Returns whether it was saved.
+ */
+export async function backfillThreadRecordFrom(sender: Session, content: Record<string, unknown>): Promise<boolean> {
+  const targetId = typeof content.sessionId === 'string' ? content.sessionId : '';
+  if (!targetId || typeof content.record !== 'string') {
+    log.warn('thread_record_backfill: missing sessionId or record', { sessionId: sender.id });
+    return false;
+  }
+  const target = await getSession(targetId);
+  const ctx: CallerContext = {
+    caller: 'agent',
+    sessionId: sender.id,
+    agentGroupId: sender.agent_group_id,
+    messagingGroupId: sender.messaging_group_id ?? '',
+  };
+  if (
+    !target ||
+    !(await mayReadAgentGroup(ctx, target.agent_group_id)) ||
+    (await isOtherConversationsDm(target, ctx.messagingGroupId))
+  ) {
+    log.warn('thread_record_backfill: thread not readable from this session', { sessionId: sender.id, targetId });
+    return false;
+  }
+  const lastAt = new Date(typeof content.lastAt === 'string' ? content.lastAt : NaN);
+  const saved = await saveBackfilledThreadRecord(target, content.record, lastAt);
+  if (saved) log.info('Backfilled thread record', { sessionId: targetId, by: sender.id });
+  return saved;
 }
 
 /** A conversation's records, newest first, within the age limit. */

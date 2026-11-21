@@ -15,8 +15,8 @@ import type { CallerContext } from '../../cli/frame.js';
 import type { Session } from '../../types.js';
 import { privateDmEnvironment } from './dm-privacy.js';
 import { sessionFile, sessionHistory } from './history.js';
-import { sessionRecords } from './search.js';
-import { saveThreadRecord } from './thread-records.js';
+import { sessionBackfillCandidates, sessionRecords } from './search.js';
+import { backfillThreadRecordFrom, listGroupThreadRecords, saveThreadRecord } from './thread-records.js';
 
 const TEST_DIR = '/tmp/nanoclaw-test-dm-privacy';
 const TEAM = 'ag-team';
@@ -153,5 +153,30 @@ describe('a global-scope personal agent reading the team', () => {
     const teamThread = caller('s-website', 'mg-website');
     await expect(sessionRecords({ all: true, group: SOLO }, teamThread)).rejects.toThrow('agent group not found');
     await expect(sessionHistory({ id: 's-tobbe' }, teamThread)).rejects.toThrow('session not found');
+  });
+});
+
+describe('backfill', () => {
+  it('lists the readable threads without a record, and saves only for them, never over a record', async () => {
+    await saveThreadRecord((await getSession('s-website')) as Session, 'Live record');
+    await thread('s-website-old', 'mg-website');
+    const fromChannel = caller('s-website', 'mg-website');
+    const candidates = await sessionBackfillCandidates({}, fromChannel);
+    // s-website has a record, s-lise is someone else's DM, the caller is s-website itself.
+    expect(candidates.map((c) => [c.sessionId, c.conversation])).toEqual([['s-website-old', '#mg-website']]);
+
+    const sender = (await getSession('s-website')) as Session;
+    const old = { sessionId: 's-website-old', record: 'Old thread', lastAt: '2026-11-02T09:00:00.000Z' };
+    expect(await backfillThreadRecordFrom(sender, old)).toBe(true);
+    expect(await backfillThreadRecordFrom(sender, { ...old, record: 'Again' })).toBe(false);
+    expect(await backfillThreadRecordFrom(sender, { sessionId: 's-website', record: 'Over the live one' })).toBe(false);
+    expect(await backfillThreadRecordFrom(sender, { sessionId: 's-lise', record: 'Peek' })).toBe(false);
+
+    const rows = await listGroupThreadRecords(TEAM);
+    expect(rows.map((r) => [r.session_id, r.record])).toEqual([
+      ['s-website', 'Live record'],
+      ['s-website-old', 'Old thread'],
+    ]);
+    expect(rows[1].updated_at).toBe('2026-11-02T09:00:00.000Z');
   });
 });

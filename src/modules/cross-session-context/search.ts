@@ -240,3 +240,34 @@ export async function sessionRecords(args: Record<string, unknown>, ctx: CallerC
   });
   return formatThreadRecords(rows) || 'No thread records yet.';
 }
+
+export interface BackfillCandidate {
+  sessionId: string;
+  /** The conversation's name, e.g. "#website". */
+  conversation: string;
+  createdAt: string;
+}
+
+/**
+ * `ncl sessions backfill-candidates`: the threads the caller may read that
+ * have no record yet, oldest first. The container's
+ * `ncl sessions backfill-records` writes one for each.
+ */
+export async function sessionBackfillCandidates(
+  args: Record<string, unknown>,
+  ctx: CallerContext,
+): Promise<BackfillCandidate[]> {
+  const agentGroupId = await groupOf(args, ctx);
+  const readable = await readableConversations(agentGroupId, ctx);
+  const recorded = new Set((await listGroupThreadRecords(agentGroupId)).map((r) => r.session_id));
+  const sessions = await getSessionsByAgentGroup(agentGroupId);
+  return sessions
+    .filter((s) => s.messaging_group_id && readable.allows(s.messaging_group_id) && !recorded.has(s.id))
+    .filter((s) => ctx.caller !== 'agent' || s.id !== ctx.sessionId)
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
+    .map((s) => ({
+      sessionId: s.id,
+      conversation: readable.names.get(s.messaging_group_id as string) ?? (s.messaging_group_id as string),
+      createdAt: s.created_at,
+    }));
+}
