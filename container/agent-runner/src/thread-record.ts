@@ -122,6 +122,37 @@ export class ThreadRecorder {
   }
 }
 
+/**
+ * The container's own environment (PID 1, the runner), as `KEY=value` pairs.
+ * Claude Code drops some variables (e.g. ANTHROPIC_AUTH_TOKEN) from the
+ * environment of commands its Bash tool runs, so `ncl sessions recall` and
+ * `backfill-records`, run that way, would reach the model "not logged in".
+ * The values are the gateway's non-secret placeholders: real credentials are
+ * injected at the network boundary and never sit in the container env.
+ */
+export function containerEnvironment(file = '/proc/1/environ'): Record<string, string> {
+  try {
+    const out: Record<string, string> = {};
+    for (const pair of fs.readFileSync(file, 'utf-8').split('\0')) {
+      const at = pair.indexOf('=');
+      if (at > 0) out[pair.slice(0, at)] = pair.slice(at + 1);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** This process's env, with anything missing or empty filled from the container's own. */
+export function modelEnvironment(
+  own: NodeJS.ProcessEnv = process.env,
+  container: Record<string, string> = containerEnvironment(),
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...own };
+  for (const [key, value] of Object.entries(container)) if (!env[key]) env[key] = value;
+  return env;
+}
+
 /** Model for record updates and recall: small and quick. */
 export const THREAD_RECORD_MODEL = 'haiku';
 
@@ -142,7 +173,7 @@ export async function askSmallModel(prompt: string): Promise<string> {
       maxTurns: 1,
       settingSources: [],
       persistSession: false,
-      env: { ...process.env },
+      env: modelEnvironment(),
       cwd: '/tmp',
     },
   })) {

@@ -84,3 +84,17 @@ describe('ThreadRecorder', () => {
     expect(recorder.current()).toBe('New record');
   });
 });
+
+describe('modelEnvironment', () => {
+  it('fills what a Bash-run command lacks from the container env, and keeps what it has', async () => {
+    const { containerEnvironment, modelEnvironment } = await import('./thread-record.js');
+    const file = tmpFile();
+    fs.writeFileSync(file, 'ANTHROPIC_AUTH_TOKEN=gateway-managed\0ANTHROPIC_BASE_URL=http://gw\0TZ=UTC\0');
+    const container = containerEnvironment(file);
+    expect(container.ANTHROPIC_AUTH_TOKEN).toBe('gateway-managed');
+    const env = modelEnvironment({ ANTHROPIC_BASE_URL: 'http://own', ANTHROPIC_AUTH_TOKEN: '' }, container);
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('gateway-managed');
+    expect(env.ANTHROPIC_BASE_URL).toBe('http://own');
+    expect(containerEnvironment('/nonexistent')).toEqual({});
+  });
+});

@@ -263,15 +263,24 @@ async function main(): Promise<void> {
   const mailbox = getAgentMailbox();
   await mailbox.start(context);
   try {
-    /** One host request from inside this command; throws on error or timeout. */
-    const ask = async (cmd: string, args: Record<string, unknown>): Promise<ResponseFrame & { ok: true }> => {
-      const id = generateId();
-      await writeRequest(mailbox, { id, command: cmd, args });
-      const resp = await pollResponse(mailbox, id, 30_000);
-      if (!resp) throw new Error(`${cmd} timed out after 30s`);
-      if (!resp.ok) throw new Error(resp.error.message);
-      return resp;
+    // Mailbox writes from this process go one at a time: concurrent writers
+    // on the session DB fail with "attempt to write a readonly database".
+    let mailboxTurn: Promise<unknown> = Promise.resolve();
+    const serial = <T>(fn: () => Promise<T>): Promise<T> => {
+      const next = mailboxTurn.then(fn, fn);
+      mailboxTurn = next.catch(() => {});
+      return next;
     };
+    /** One host request from inside this command; throws on error or timeout. */
+    const ask = (cmd: string, args: Record<string, unknown>): Promise<ResponseFrame & { ok: true }> =>
+      serial(async () => {
+        const id = generateId();
+        await writeRequest(mailbox, { id, command: cmd, args });
+        const resp = await pollResponse(mailbox, id, 30_000);
+        if (!resp) throw new Error(`${cmd} timed out after 30s`);
+        if (!resp.ok) throw new Error(resp.error.message);
+        return resp;
+      });
     const groupArg = typeof requestArgs.group === 'string' && requestArgs.group ? { group: requestArgs.group } : {};
 
     if (command === BACKFILL_COMMAND) {
@@ -282,12 +291,14 @@ async function main(): Promise<void> {
           (await ask('sessions-history', { id, limit: BACKFILL_HISTORY_LIMIT })).data as TranscriptRow[],
         ask: askSmallModel,
         save: async (sessionId, record, lastAt) => {
-          await mailbox.run(() =>
-            mailbox.operations.writeMessageOut({
-              id: generateId(),
-              kind: 'system',
-              content: JSON.stringify({ action: BACKFILL_ACTION, sessionId, record, lastAt }),
-            }),
+          await serial(() =>
+            mailbox.run(() =>
+              mailbox.operations.writeMessageOut({
+                id: generateId(),
+                kind: 'system',
+                content: JSON.stringify({ action: BACKFILL_ACTION, sessionId, record, lastAt }),
+              }),
+            ),
           );
         },
         print: (line) => process.stdout.write(line + '\n'),
