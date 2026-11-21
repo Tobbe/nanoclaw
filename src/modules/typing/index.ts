@@ -43,6 +43,11 @@ const HEARTBEAT_FRESH_MS = 6000;
  * stays running; ticks inside the pause just skip the setTyping call.
  */
 const POST_DELIVERY_PAUSE_MS = 10000;
+/**
+ * How long after a clear (or a delivery) to clear once more: long enough
+ * for a setTyping that was already on its way to have landed.
+ */
+const CLEAR_AGAIN_MS = 1000;
 
 interface TypingAdapter {
   setTyping?(channelType: string, platformId: string, threadId: string | null, instance?: string): Promise<void>;
@@ -103,13 +108,14 @@ function clearTyping(
   threadId: string | null,
   instance?: string,
 ): void {
-  const clear = () => {
-    adapter?.clearTyping?.(channelType, platformId, threadId, instance)?.catch(() => {});
-  };
-  clear();
+  clearOnce(channelType, platformId, threadId, instance);
   setTimeout(() => {
-    if (!typingRefreshers.has(sessionId)) clear();
-  }, 1000).unref();
+    if (!typingRefreshers.has(sessionId)) clearOnce(channelType, platformId, threadId, instance);
+  }, CLEAR_AGAIN_MS).unref();
+}
+
+function clearOnce(channelType: string, platformId: string, threadId: string | null, instance?: string): void {
+  adapter?.clearTyping?.(channelType, platformId, threadId, instance)?.catch(() => {});
 }
 
 function isHeartbeatFresh(agentGroupId: string, sessionId: string): boolean {
@@ -194,12 +200,24 @@ export function startTypingRefresh(
  * Pause the typing refresh for POST_DELIVERY_PAUSE_MS. Called after
  * a user-facing message is delivered so the client-side indicator
  * has a chance to visually clear before the agent's next SDK event
- * pushes it back on. No-op if no refresh is active for this session.
+ * pushes it back on, and clear it once more a second later. No-op if
+ * no refresh is active for this session.
  */
 export function pauseTypingRefreshAfterDelivery(sessionId: string): void {
   const entry = typingRefreshers.get(sessionId);
   if (!entry) return;
-  entry.pausedUntil = Date.now() + POST_DELIVERY_PAUSE_MS;
+  const pausedUntil = Date.now() + POST_DELIVERY_PAUSE_MS;
+  entry.pausedUntil = pausedUntil;
+  // The post itself clears Slack's "Typing…", but a tick sent just before
+  // it can land after it and turn it back on. No tick is sent during the
+  // pause, so clear once a second later instead of waiting for the refresh
+  // to end. Skipped if the refresh stopped (that clears on its own), a new
+  // inbound restarted it, or a later delivery took over.
+  setTimeout(() => {
+    const current = typingRefreshers.get(sessionId);
+    if (current !== entry || current.pausedUntil !== pausedUntil) return;
+    clearOnce(entry.channelType, entry.platformId, entry.threadId, entry.instance);
+  }, CLEAR_AGAIN_MS).unref();
 }
 
 /**

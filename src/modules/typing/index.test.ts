@@ -169,6 +169,33 @@ describe('clearing the indicator', () => {
     expect(cleared).toHaveLength(2);
   });
 
+  it('clears a second after a delivery, while the refresh is still paused', async () => {
+    // A tick sent just before the reply can reach Slack after it; without
+    // this the clear waited for the first tick after the 10 s pause.
+    const { pauseTypingRefreshAfterDelivery } = await import('./index.js');
+    const cleared = clearingAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    await vi.advanceTimersByTimeAsync(1_000);
+    pauseTypingRefreshAfterDelivery('sess-1');
+    await vi.advanceTimersByTimeAsync(999);
+    expect(cleared).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(cleared).toEqual([{ channelType: 'slack', platformId: 'slack:C1', threadId: 'T1', instance: 'slack' }]);
+    stopTypingRefresh('sess-1');
+  });
+
+  it('skips the post-delivery clear when a new message restarts typing first', async () => {
+    const { pauseTypingRefreshAfterDelivery } = await import('./index.js');
+    const cleared = clearingAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    pauseTypingRefreshAfterDelivery('sess-1');
+    await vi.advanceTimersByTimeAsync(500);
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(cleared).toEqual([]);
+    stopTypingRefresh('sess-1');
+  });
+
   it("skips the second clear when a new refresh started in between", async () => {
     const cleared = clearingAdapter();
     startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
