@@ -25,8 +25,11 @@ export const HISTORY_DEFAULT_LIMIT = 50;
 /** Without `--all`, rows read per table to still fill `limit` after dropping system rows. */
 const HISTORY_SCAN_FACTOR = 4;
 const HISTORY_SCAN_MAX = 8_000;
-/** Per-line text cap in the human pipe-separated rendering. */
-export const HISTORY_TEXT_MAX_CHARS = 200;
+/**
+ * Per-line text cap in the human rendering: long enough for a whole chat
+ * message (a reader cut off mid-request misses what was asked); --json is uncapped.
+ */
+export const HISTORY_TEXT_MAX_CHARS = 2_000;
 
 export interface HistoryRow {
   /** ISO-8601 UTC on the wire; the human renderer localizes. */
@@ -47,7 +50,9 @@ export interface HistoryRow {
 function cell(value: string): string {
   // Keep the one-line-per-message format intact: newlines and pipes in
   // message text would shred downstream line/field parsing.
-  return value.replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, HISTORY_TEXT_MAX_CHARS);
+  const flat = value.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+  // A cut line says so, so a reader knows to fetch the rest with --json.
+  return flat.length <= HISTORY_TEXT_MAX_CHARS ? flat : `${flat.slice(0, HISTORY_TEXT_MAX_CHARS - 1)}…`;
 }
 
 function parseText(raw: string): { text: string; sender: string | null; attachments: string[]; ambient?: true } {
@@ -139,7 +144,7 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
 
 /**
  * Human rendering: pipe-separated lines
- *   timestamp|direction(in/out)|kind|sender|text(first 200 chars)
+ *   timestamp|direction(in/out)|kind|sender|text(first 2,000 chars)
  * with the timestamp in the install timezone (`timezone` injectable for
  * deterministic tests). `--json` bypasses this and gets the raw rows.
  */

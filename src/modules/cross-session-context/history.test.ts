@@ -15,7 +15,7 @@ import { closeDb, createAgentGroup, initTestDb, runMigrations } from '../../db/i
 import { createSession } from '../../db/sessions.js';
 import { initSessionFolder, writeOutboundDirect, writeSessionMessage } from '../../session-manager.js';
 import type { CallerContext } from '../../cli/frame.js';
-import { formatHistoryLines, sessionFile, sessionHistory } from './history.js';
+import { formatHistoryLines, HISTORY_TEXT_MAX_CHARS, sessionFile, sessionHistory } from './history.js';
 
 const TEST_DIR = '/tmp/nanoclaw-test-cross-session-history';
 const AG = 'ag-hist';
@@ -110,6 +110,17 @@ describe('sessionHistory', () => {
     // A non-UTC install timezone shifts the human stamp; data stays ISO.
     const berlin = formatHistoryLines(await sessionHistory({ id: SESS }, HOST), 'Europe/Berlin');
     expect(berlin.startsWith('2026-08-01 12:00|')).toBe(true);
+  });
+
+  it('keeps a long message whole in the human rendering, and marks one past the cap as cut', async () => {
+    const long = `Kan du lægge den rigtige case op? ${'a'.repeat(600)}`;
+    await writeInbound('in-1', '2026-08-01T10:00:00.000Z', long);
+    await writeInbound('in-2', '2026-08-01T10:01:00.000Z', 'b'.repeat(HISTORY_TEXT_MAX_CHARS + 50));
+    const lines = formatHistoryLines(await sessionHistory({ id: SESS }, HOST), 'UTC').split('\n');
+    expect(lines[0].endsWith(long)).toBe(true);
+    const cut = lines[1].split('|')[4];
+    expect(cut).toHaveLength(HISTORY_TEXT_MAX_CHARS);
+    expect(cut.endsWith('…')).toBe(true);
   });
 
   it('shows only the conversation by default, everything with --all, and still fills --limit', async () => {

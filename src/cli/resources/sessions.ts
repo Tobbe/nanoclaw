@@ -67,7 +67,7 @@ registerResource({
         'conversation itself by default; `--all` adds system rows (progress cards, record updates, ncl ' +
         'requests) and copies of other threads.\n\n' +
         'Output: pipe-separated lines "timestamp|direction(in/out)|kind|sender|text" (text capped at ' +
-        '200 chars), the newest --limit rows in chronological order; `--json` returns the raw rows ' +
+        '2,000 chars, a cut one ends in …), the newest --limit rows in chronological order; `--json` returns the raw rows ' +
         'with ISO timestamps and uncapped text. Use after `ncl sessions list` to ' +
         'catch up fully on another conversation of your agent group (you only ever see your own ' +
         "group's sessions).",
