@@ -158,3 +158,28 @@ describe('SQLite runner mailbox canonical serialization', () => {
     expect(mailbox.getPendingMessages(10, false)).toEqual([]);
   });
 });
+
+describe('getChatSince', () => {
+  test('returns the chat after each cursor, newest `limit`, oldest first', async () => {
+    const { inbound, outbound } = initTestSessionDb();
+    const addIn = inbound.prepare(
+      `INSERT INTO messages_in (id, seq, kind, timestamp, status, trigger, content) VALUES (?, ?, ?, ?, 'completed', 1, ?)`,
+    );
+    addIn.run('in-2', 2, 'chat', '2026-01-01 00:00:01', '{"text":"one"}');
+    addIn.run('in-4', 4, 'system', '2026-01-01 00:00:02', '{"action":"x"}');
+    addIn.run('in-6', 6, 'chat-sdk', '2026-01-01 00:00:03', '{"text":"two"}');
+    addIn.run('in-8', 8, 'chat', '2026-01-01 00:00:04', '{"text":"three"}');
+    const addOut = outbound.prepare(
+      `INSERT INTO messages_out (id, seq, kind, timestamp, content) VALUES (?, ?, ?, ?, ?)`,
+    );
+    addOut.run('out-1', 1, 'chat', '2026-01-01 00:00:01', '{"text":"reply"}');
+    addOut.run('out-3', 3, 'system', '2026-01-01 00:00:02', '{"action":"thread_record"}');
+
+    const mailbox = new SqliteAgentMailbox();
+    await mailbox.start({ agentGroupId: 'agent', sessionId: 'session', mailbox: null });
+    const chat = mailbox.getChatSince({ inbound: 2, outbound: 0 }, 2);
+    expect(chat.inbound.map((m) => m.id)).toEqual(['in-6', 'in-8']);
+    expect(chat.outbound.map((m) => m.id)).toEqual(['out-1']);
+    expect(mailbox.getChatSince({ inbound: 0, outbound: 0 }, 1).inbound.map((m) => m.id)).toEqual(['in-8']);
+  });
+});

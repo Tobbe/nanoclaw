@@ -288,7 +288,7 @@ export function wrapSqliteInbound(db: Database.Database, nextSequence = () => ne
     getInboundHistory: (limit) =>
       (
         db
-          .prepare('SELECT timestamp, kind, content FROM messages_in ORDER BY seq DESC LIMIT ?')
+          .prepare('SELECT seq, timestamp, kind, content FROM messages_in ORDER BY seq DESC LIMIT ?')
           .all(limit) as MailboxHistoryMessage[]
       ).map((row) => ({ ...row, timestamp: sqliteTimestamp(row.timestamp) })),
     getConversationRoot: () => {
@@ -419,7 +419,7 @@ export function wrapSqliteOutbound(
     getOutboundHistory: (limit) =>
       (
         readable()
-          .prepare('SELECT timestamp, kind, content FROM messages_out ORDER BY seq DESC LIMIT ?')
+          .prepare('SELECT seq, timestamp, kind, content FROM messages_out ORDER BY seq DESC LIMIT ?')
           .all(limit) as MailboxHistoryMessage[]
       ).map((row) => ({ ...row, timestamp: sqliteTimestamp(row.timestamp) })),
     getTopLevelOutbound: (limit) =>

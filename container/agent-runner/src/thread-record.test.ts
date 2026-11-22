@@ -3,7 +3,15 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { buildRecordPrompt, cleanRecord, stripOtherThreads, ThreadRecorder } from './thread-record.js';
+import {
+  buildRecordPrompt,
+  chatTranscript,
+  cleanRecord,
+  stripOtherThreads,
+  ThreadRecorder,
+  type TranscriptRow,
+} from './thread-record.js';
+import type { ChatCursor, InboundMessage, OutboundMessage } from './mailbox/types.js';
 
 const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'thread-record-')), 'record.md');
 
@@ -98,6 +106,146 @@ describe('ThreadRecorder', () => {
     expect(logs[0]).toContain('gateway down');
     await recorder.note('c', 'd');
     expect(recorder.current()).toBe('New record');
+  });
+});
+
+const inMsg = (sequence: number, text: string, extra: Partial<InboundMessage> = {}): InboundMessage =>
+  ({
+    sequence,
+    kind: 'chat',
+    timestamp: `2026-01-01T00:00:0${sequence}.000Z`,
+    channelType: 'slack',
+    content: JSON.stringify({ text, sender: 'Lise' }),
+    ...extra,
+  }) as InboundMessage;
+const outMsg = (sequence: number, text: string): OutboundMessage =>
+  ({
+    sequence,
+    kind: 'chat',
+    timestamp: `2026-01-01T00:00:0${sequence}.000Z`,
+    content: JSON.stringify({ text }),
+  }) as OutboundMessage;
+
+describe('chatTranscript', () => {
+  it("keeps this thread's chat in time order and moves the cursor past copies from elsewhere", () => {
+    const { rows, through } = chatTranscript(
+      {
+        inbound: [
+          inMsg(2, 'Rundere knapper?'),
+          inMsg(4, 'other thread', { content: JSON.stringify({ text: 'x', echo: { surface: 's' } }) }),
+          inMsg(6, 'from an agent', { channelType: 'agent' }),
+        ],
+        outbound: [outMsg(3, 'Done, PR #12')],
+      },
+      { inbound: 0, outbound: 1 },
+    );
+    expect(rows.map((r) => [r.direction, r.text, !!r.ambient])).toEqual([
+      ['in', 'Rundere knapper?', false],
+      ['out', 'Done, PR #12', false],
+      ['in', 'x', true],
+    ]);
+    expect(through).toEqual({ inbound: 6, outbound: 3 });
+  });
+});
+
+describe('ThreadRecorder reading stored messages', () => {
+  const row = (sequence: number, text: string): TranscriptRow => ({
+    timestamp: `2026-01-01T00:00:0${sequence}.000Z`,
+    direction: 'in',
+    kind: 'chat',
+    sender: 'Lise',
+    text,
+  });
+  /** A fake mailbox: messages 1..n, read after a cursor. */
+  const mailbox = (texts: string[]) => {
+    const reads: ChatCursor[] = [];
+    return {
+      texts,
+      reads,
+      readChat: (after: ChatCursor) => {
+        reads.push(after);
+        const rows = texts.map((t, i) => row(i + 1, t)).filter((_, i) => i + 1 > after.inbound);
+        return { rows, through: { inbound: texts.length, outbound: 0 } };
+      },
+    };
+  };
+
+  it('folds the messages after the cursor, and sends the cursor with the record', async () => {
+    const box = mailbox(['Rundere knapper?', 'Og grøn?']);
+    const prompts: string[] = [];
+    const sent: Array<[string, ChatCursor | null]> = [];
+    const recorder = new ThreadRecorder({
+      recordFile: tmpFile(),
+      summarize: async (p) => {
+        prompts.push(p);
+        return `Record ${prompts.length}`;
+      },
+      send: async (record, covered) => {
+        sent.push([record, covered]);
+      },
+      readChat: box.readChat,
+      log: () => {},
+    });
+    await recorder.note('turn prompt', 'reply');
+    expect(prompts[0]).toContain('Lise: Rundere knapper?');
+    expect(prompts[0]).toContain('Lise: Og grøn?');
+    expect(prompts[0]).not.toContain('turn prompt');
+    expect(sent).toEqual([['Record 1', { inbound: 2, outbound: 0 }]]);
+
+    box.texts.push('Ja, navy');
+    await recorder.note('turn 2', 'reply 2');
+    expect(box.reads[1]).toEqual({ inbound: 2, outbound: 0 });
+    expect(prompts[1]).toContain('Lise: Ja, navy');
+    expect(prompts[1]).not.toContain('Rundere knapper?');
+
+    await recorder.note('turn 3', 'reply 3');
+    expect(prompts).toHaveLength(2);
+  });
+
+  it('keeps the cursor when an update fails, so the next one folds the missed messages too', async () => {
+    const box = mailbox(['Kan vi få runde hjørner?']);
+    const prompts: string[] = [];
+    let calls = 0;
+    const recorder = new ThreadRecorder({
+      recordFile: tmpFile(),
+      summarize: async (p) => {
+        calls += 1;
+        prompts.push(p);
+        if (calls === 1) throw new Error('gateway down');
+        return 'Record';
+      },
+      send: async () => {},
+      readChat: box.readChat,
+      log: () => {},
+    });
+    await recorder.note('t1', 'r1');
+    expect(recorder.cursor()).toBeNull();
+    box.texts.push('Hallo?');
+    await recorder.note('t2', 'r2');
+    expect(prompts[1]).toContain('Kan vi få runde hjørner?');
+    expect(prompts[1]).toContain('Hallo?');
+    expect(recorder.cursor()).toEqual({ inbound: 2, outbound: 0 });
+  });
+
+  it('folds the turn once for a record from before cursors, then starts counting', async () => {
+    const file = tmpFile();
+    fs.writeFileSync(file, 'Old record\n');
+    const box = mailbox(['old message', 'new message']);
+    const prompts: string[] = [];
+    const recorder = new ThreadRecorder({
+      recordFile: file,
+      summarize: async (p) => {
+        prompts.push(p);
+        return 'Record';
+      },
+      send: async () => {},
+      readChat: box.readChat,
+      log: () => {},
+    });
+    await recorder.note('<message>new message</message>', 'reply');
+    expect(prompts[0]).toContain('<message>new message</message>');
+    expect(prompts[0]).not.toContain('old message');
+    expect(recorder.cursor()).toEqual({ inbound: 2, outbound: 0 });
   });
 });
 

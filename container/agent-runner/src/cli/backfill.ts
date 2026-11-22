@@ -10,7 +10,9 @@
  * as a `thread_record_backfill` system action. The host checks the thread is
  * readable from this session and never replaces an existing record.
  */
-import { buildRecordPrompt, cleanRecord } from '../thread-record.js';
+import { buildRecordPrompt, cleanRecord, transcriptLines, type TranscriptRow } from '../thread-record.js';
+
+export { transcriptLines, type TranscriptRow };
 
 export const BACKFILL_COMMAND = 'sessions-backfill-records';
 export const BACKFILL_ACTION = 'thread_record_backfill';
@@ -26,22 +28,6 @@ export interface Candidate {
   conversation: string;
   /** A rebuild: the existing record's updated_at, passed back so a newer record is never replaced. */
   basedOn?: string;
-}
-
-export interface TranscriptRow {
-  timestamp: string;
-  direction: 'in' | 'out';
-  kind: string;
-  sender: string;
-  text: string;
-  ambient?: boolean;
-}
-
-/** A thread's own chat lines, oldest first: no ambient copies, no system rows. */
-export function transcriptLines(rows: TranscriptRow[]): string[] {
-  return rows
-    .filter((r) => !r.ambient && r.text.trim() && (r.kind === 'chat' || r.kind === 'chat-sdk'))
-    .map((r) => `[${r.timestamp.slice(0, 16).replace('T', ' ')}] ${r.direction === 'out' ? 'you' : r.sender || 'someone'}: ${r.text.trim()}`);
 }
 
 /** Lines → parts of at most `max` characters (a longer single line is cut). */

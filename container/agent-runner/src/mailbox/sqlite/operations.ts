@@ -167,14 +167,12 @@ export function sqliteGetMessageIdBySeq(sequence: number): string | null {
   );
   if (inboundRow) return inboundRow.id;
   const outboundRow = getOutboundDb().prepare('SELECT id FROM messages_out WHERE seq = ?').get(sequence) as
-    | { id: string }
-    | undefined;
+    { id: string } | undefined;
   if (!outboundRow) return null;
   const delivered = readInbound(
     (inbound) =>
       inbound.prepare('SELECT platform_message_id FROM delivered WHERE message_out_id = ?').get(outboundRow.id) as
-        | { platform_message_id: string | null }
-        | undefined,
+        { platform_message_id: string | null } | undefined,
   );
   return delivered?.platform_message_id || outboundRow.id;
 }
@@ -183,11 +181,35 @@ export function sqliteGetDeliveryStatus(messageOutId: string): 'delivered' | 'fa
   const row = readInbound(
     (inbound) =>
       inbound.prepare('SELECT status FROM delivered WHERE message_out_id = ?').get(messageOutId) as
-        | { status: string }
-        | undefined,
+        { status: string } | undefined,
   );
   if (!row) return null;
   return row.status === 'failed' ? 'failed' : 'delivered';
+}
+
+/** Chat rows after a sequence number: the newest `limit`, oldest first. */
+export function sqliteGetChatSince(
+  after: { inbound: number; outbound: number },
+  limit: number,
+): { inbound: MessageInRow[]; outbound: MessageOutRow[] } {
+  const inbound = readInbound(
+    (db) =>
+      db
+        .prepare(
+          `SELECT * FROM messages_in
+            WHERE seq > ? AND kind IN ('chat', 'chat-sdk')
+            ORDER BY seq DESC LIMIT ?`,
+        )
+        .all(after.inbound, limit) as MessageInRow[],
+  );
+  const outbound = getOutboundDb()
+    .prepare(
+      `SELECT * FROM messages_out
+        WHERE seq > ? AND kind IN ('chat', 'chat-sdk')
+        ORDER BY seq DESC LIMIT ?`,
+    )
+    .all(after.outbound, limit) as MessageOutRow[];
+  return { inbound: inbound.reverse(), outbound: outbound.reverse() };
 }
 
 export function sqliteGetRoutingBySeq(
@@ -196,16 +218,14 @@ export function sqliteGetRoutingBySeq(
   const inbound = readInbound(
     (db) =>
       db.prepare('SELECT channel_type, platform_id, thread_id FROM messages_in WHERE seq = ?').get(sequence) as
-        | { channel_type: string | null; platform_id: string | null; thread_id: string | null }
-        | undefined,
+        { channel_type: string | null; platform_id: string | null; thread_id: string | null } | undefined,
   );
   if (inbound) return inbound;
   return (
     (getOutboundDb()
       .prepare('SELECT channel_type, platform_id, thread_id FROM messages_out WHERE seq = ?')
       .get(sequence) as
-      | { channel_type: string | null; platform_id: string | null; thread_id: string | null }
-      | undefined) ?? null
+      { channel_type: string | null; platform_id: string | null; thread_id: string | null } | undefined) ?? null
   );
 }
 
@@ -224,8 +244,7 @@ export function sqliteGetSessionRouting(): SessionRouting {
     const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'session_routing'").get();
     if (!exists) return undefined;
     return db.prepare('SELECT channel_type, platform_id, thread_id FROM session_routing WHERE id = 1').get() as
-      | { channel_type: string | null; platform_id: string | null; thread_id: string | null }
-      | undefined;
+      { channel_type: string | null; platform_id: string | null; thread_id: string | null } | undefined;
   });
   return parseSessionRoutingRecord({
     channelType: row?.channel_type ?? null,
@@ -236,8 +255,7 @@ export function sqliteGetSessionRouting(): SessionRouting {
 
 export function sqliteGetState(key: string): StateValue | undefined {
   const row = getOutboundDb().prepare('SELECT value, updated_at FROM session_state WHERE key = ?').get(key) as
-    | { value: string; updated_at: string }
-    | undefined;
+    { value: string; updated_at: string } | undefined;
   if (!row) return undefined;
   const record = parseStateRecord({ key, value: row.value, updatedAt: sqliteTimestamp(row.updated_at) });
   return { value: record.value, updatedAt: record.updatedAt };
@@ -290,8 +308,7 @@ export function sqliteFindByRouting(channelType: string, platformId: string): De
   const row = readInbound((db) =>
     channelType === 'agent'
       ? (db.prepare("SELECT * FROM destinations WHERE type = 'agent' AND agent_group_id = ?").get(platformId) as
-          | DestinationRow
-          | undefined)
+          DestinationRow | undefined)
       : (db
           .prepare("SELECT * FROM destinations WHERE type = 'channel' AND channel_type = ? AND platform_id = ?")
           .get(channelType, platformId) as DestinationRow | undefined),

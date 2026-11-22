@@ -9,6 +9,8 @@
  *   - hands a brand-new thread the records of its conversation's other
  *     threads, so it knows what happened where without being asked;
  *   - serves them on demand (`ncl sessions records`) and to search.
+ * Wherever a record is shown, the thread's messages newer than it follow it
+ * as written, so a reader never misses what came after the last update.
  *
  * Audience: a thread is only ever given records from the SAME messaging
  * group (same channel or DM = same audience), like the rest of this module.
@@ -22,7 +24,8 @@ import { getSession } from '../../db/sessions.js';
 import { withExistingMailboxSession } from '../../session-manager.js';
 import { formatLocalStamp } from '../../timezone.js';
 import type { AgentGroup, MessagingGroup, Session } from '../../types.js';
-import { ECHO_CHANNEL_TYPE } from './config.js';
+import { ECHO_CHANNEL_TYPE, ECHO_CONCURRENCY } from './config.js';
+import { mapConcurrent } from './parallel.js';
 import { isOtherConversationsDm, mayReadAgentGroup } from './dm-privacy.js';
 
 /** Echo surface of the seeded block; the runner renders it as <channel-threads>. */
@@ -35,6 +38,12 @@ export const THREAD_RECORDS_MAX_AGE_DAYS = 60;
 export const THREAD_RECORDS_LIMIT = 40;
 /** Size cap of the seeded block. */
 export const THREAD_RECORDS_BLOCK_MAX_CHARS = 24_000;
+/** Newer messages shown after a record, the newest kept. */
+export const NEWER_MESSAGES_MAX = 10;
+/** Each newer message's text cap. */
+export const NEWER_MESSAGE_MAX_CHARS = 400;
+/** History rows read per thread to find its newer messages. */
+const NEWER_SCAN = 50;
 
 registerMigration({
   version: 1,
@@ -57,6 +66,15 @@ registerMigration({
   },
 });
 
+registerMigration({
+  version: 2,
+  name: 'module:thread-records:covered',
+  async up(db) {
+    await db.exec(`ALTER TABLE thread_records ADD COLUMN covered_in_seq INTEGER`);
+    await db.exec(`ALTER TABLE thread_records ADD COLUMN covered_out_seq INTEGER`);
+  },
+});
+
 export interface ThreadRecordRow {
   session_id: string;
   agent_group_id: string;
@@ -64,23 +82,69 @@ export interface ThreadRecordRow {
   thread_id: string | null;
   record: string;
   updated_at: string;
+  /** The last inbound / outbound seq the record covers; null for records from before cursors. */
+  covered_in_seq?: number | null;
+  covered_out_seq?: number | null;
+}
+
+/** The last messages a record covers, as the runner sends it. */
+export interface CoveredCursor {
+  inbound: number;
+  outbound: number;
+}
+
+/** A record with the thread's messages newer than it, as shown. */
+export interface ShownThreadRecord extends ThreadRecordRow {
+  newer?: { lines: string[]; more: number };
+}
+
+export function parseMessage(raw: string): { text: string; sender: string; ambient: boolean } {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      text: typeof parsed.text === 'string' ? parsed.text : '',
+      sender: typeof parsed.sender === 'string' ? parsed.sender : '',
+      ambient: parsed.echo !== undefined,
+    };
+  } catch {
+    return { text: '', sender: '', ambient: false };
+  }
+}
+
+/** The runner's `covered` payload, or null when absent or malformed. */
+export function parseCovered(value: unknown): CoveredCursor | null {
+  if (!value || typeof value !== 'object') return null;
+  const { inbound, outbound } = value as Record<string, unknown>;
+  return Number.isInteger(inbound) && Number.isInteger(outbound)
+    ? { inbound: inbound as number, outbound: outbound as number }
+    : null;
 }
 
 /** Keep a session's newest record. Sessions without a conversation have none. */
-export async function saveThreadRecord(session: Session, record: string, now = new Date()): Promise<boolean> {
+export async function saveThreadRecord(
+  session: Session,
+  record: string,
+  now = new Date(),
+  covered: CoveredCursor | null = null,
+): Promise<boolean> {
   if (!session.messaging_group_id) return false;
   const text = record.trim().slice(0, THREAD_RECORD_MAX_CHARS);
   if (!text) return false;
   await getDb().run(
-    `INSERT INTO thread_records (session_id, agent_group_id, messaging_group_id, thread_id, record, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT (session_id) DO UPDATE SET record = excluded.record, updated_at = excluded.updated_at`,
+    `INSERT INTO thread_records
+       (session_id, agent_group_id, messaging_group_id, thread_id, record, updated_at, covered_in_seq, covered_out_seq)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (session_id) DO UPDATE SET
+       record = excluded.record, updated_at = excluded.updated_at,
+       covered_in_seq = excluded.covered_in_seq, covered_out_seq = excluded.covered_out_seq`,
     session.id,
     session.agent_group_id,
     session.messaging_group_id,
     session.thread_id,
     text,
     now.toISOString(),
+    covered?.inbound ?? null,
+    covered?.outbound ?? null,
   );
   return true;
 }
@@ -104,7 +168,10 @@ export async function saveBackfilledThreadRecord(
     // A rebuild replaces the record it was built from, and nothing newer:
     // a live update meanwhile wins.
     const replaced = await getDb().run(
-      `UPDATE thread_records SET record = ?, updated_at = ? WHERE session_id = ? AND updated_at = ?`,
+      // Built from the whole transcript up to `lastAt`: its newer messages
+      // go by that time, not by the old record's cursor.
+      `UPDATE thread_records SET record = ?, updated_at = ?, covered_in_seq = NULL, covered_out_seq = NULL
+        WHERE session_id = ? AND updated_at = ?`,
       text,
       stamp.toISOString(),
       session.id,
@@ -194,7 +261,7 @@ export async function listGroupThreadRecords(agentGroupId: string): Promise<Thre
  * Stops before the size cap rather than cutting a record in half.
  */
 export function formatThreadRecords(
-  rows: ThreadRecordRow[],
+  rows: ShownThreadRecord[],
   timezone: string = TIMEZONE,
   options: { maxChars?: number; conversationNames?: Map<string, string> } = {},
 ): string {
@@ -204,12 +271,70 @@ export function formatThreadRecords(
   for (const row of rows) {
     const where = options.conversationNames?.get(row.messaging_group_id);
     const head = [formatLocalStamp(new Date(row.updated_at), timezone), ...(where ? [where] : []), row.session_id];
-    const entry = `[${head.join(' · ')}]\n${row.record.trim()}`;
+    const newer = row.newer
+      ? [
+          '',
+          `Since this record${row.newer.more > 0 ? ` (the newest ${row.newer.lines.length}; ${row.newer.more} earlier in \`ncl sessions history ${row.session_id}\`)` : ''}:`,
+          ...row.newer.lines,
+        ]
+      : [];
+    const entry = [`[${head.join(' · ')}]`, row.record.trim(), ...newer].join('\n');
     if (size + entry.length > maxChars) break;
     parts.push(entry);
     size += entry.length + 2;
   }
   return parts.join('\n\n');
+}
+
+/**
+ * A thread's chat newer than its record: after the record's cursor, or, for
+ * a record from before cursors, after the time it was written. Oldest first,
+ * the newest `NEWER_MESSAGES_MAX` kept. Null when there are none.
+ */
+export async function newerMessages(
+  row: ThreadRecordRow,
+  timezone: string = TIMEZONE,
+): Promise<ShownThreadRecord['newer'] | null> {
+  const history = await withExistingMailboxSession(row.agent_group_id, row.session_id, (mailbox) => ({
+    inbound: mailbox.getInboundHistory(NEWER_SCAN),
+    outbound: mailbox.getOutboundHistory(NEWER_SCAN),
+  }));
+  if (!history) return null;
+  const hasCursor = row.covered_in_seq != null && row.covered_out_seq != null;
+  const isNewer = (seq: number | undefined, timestamp: string, covered: number | null | undefined): boolean =>
+    hasCursor ? (seq ?? 0) > (covered ?? 0) : timestamp > row.updated_at;
+  const found: Array<{ timestamp: string; line: string }> = [];
+  const add = (timestamp: string, who: string, text: string): void => {
+    const flat = text.replace(/\s+/g, ' ').trim();
+    const clipped = flat.length > NEWER_MESSAGE_MAX_CHARS ? `${flat.slice(0, NEWER_MESSAGE_MAX_CHARS - 1)}…` : flat;
+    found.push({ timestamp, line: `[${formatLocalStamp(new Date(timestamp), timezone)}] ${who}: ${clipped}` });
+  };
+  for (const r of history.inbound) {
+    if ((r.kind !== 'chat' && r.kind !== 'chat-sdk') || !isNewer(r.seq, r.timestamp, row.covered_in_seq)) continue;
+    const m = parseMessage(r.content);
+    if (!m.ambient && m.text.trim()) add(r.timestamp, m.sender || 'someone', m.text);
+  }
+  for (const r of history.outbound) {
+    if ((r.kind !== 'chat' && r.kind !== 'chat-sdk') || !isNewer(r.seq, r.timestamp, row.covered_out_seq)) continue;
+    const m = parseMessage(r.content);
+    if (m.text.trim()) add(r.timestamp, 'you', m.text);
+  }
+  if (found.length === 0) return null;
+  found.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
+  const kept = found.slice(-NEWER_MESSAGES_MAX);
+  return { lines: kept.map((f) => f.line), more: found.length - kept.length };
+}
+
+/** Records with their threads' newer messages. A thread that can't be read shows its record alone. */
+export async function withNewerMessages(
+  rows: ThreadRecordRow[],
+  timezone: string = TIMEZONE,
+): Promise<ShownThreadRecord[]> {
+  const reads = await mapConcurrent(rows, ECHO_CONCURRENCY, (row) => newerMessages(row, timezone));
+  return rows.map((row, i) => {
+    const read = reads[i];
+    return read.status === 'fulfilled' && read.value ? { ...row, newer: read.value } : row;
+  });
 }
 
 /**
@@ -225,7 +350,7 @@ export async function seedThreadRecords(
   if (!options.created) return;
   try {
     const rows = await listThreadRecords(agentGroup.id, mg.id, { excludeSessionId: session.id, now: options.now });
-    const text = formatThreadRecords(rows);
+    const text = formatThreadRecords(await withNewerMessages(rows));
     if (!text) return;
     const timestamp = new Date(options.now ?? Date.now()).toISOString();
     await withExistingMailboxSession(agentGroup.id, session.id, async (mailbox) => {

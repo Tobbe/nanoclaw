@@ -24,7 +24,13 @@ import type { CallerContext } from '../../cli/frame.js';
 import { ECHO_CONCURRENCY } from './config.js';
 import { mayReadAgentGroup } from './dm-privacy.js';
 import { mapConcurrent } from './parallel.js';
-import { formatThreadRecords, listGroupThreadRecords, listThreadRecords } from './thread-records.js';
+import {
+  formatThreadRecords,
+  listGroupThreadRecords,
+  listThreadRecords,
+  parseMessage,
+  withNewerMessages,
+} from './thread-records.js';
 
 export const SEARCH_DEFAULT_LIMIT = 15;
 /** Size cap of the group-wide records list (`records --all`, read by recall). */
@@ -107,19 +113,6 @@ export function rankHits(
   }
   hits.sort((a, b) => b.score - a.score || (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));
   return hits.slice(0, limit);
-}
-
-function parseMessage(raw: string): { text: string; sender: string; ambient: boolean } {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return {
-      text: typeof parsed.text === 'string' ? parsed.text : '',
-      sender: typeof parsed.sender === 'string' ? parsed.sender : '',
-      ambient: parsed.echo !== undefined,
-    };
-  } catch {
-    return { text: '', sender: '', ambient: false };
-  }
 }
 
 /** The agent group to read: `--group` when given and allowed, else the caller's own. */
@@ -224,8 +217,10 @@ export async function sessionRecords(args: Record<string, unknown>, ctx: CallerC
       (r) => r.session_id !== ownSession && readable.allows(r.messaging_group_id),
     );
     return (
-      formatThreadRecords(rows, TIMEZONE, { maxChars: ALL_RECORDS_MAX_CHARS, conversationNames: readable.names }) ||
-      'No thread records yet.'
+      formatThreadRecords(await withNewerMessages(rows), TIMEZONE, {
+        maxChars: ALL_RECORDS_MAX_CHARS,
+        conversationNames: readable.names,
+      }) || 'No thread records yet.'
     );
   }
   if (ctx.caller !== 'agent') {
@@ -238,7 +233,7 @@ export async function sessionRecords(args: Record<string, unknown>, ctx: CallerC
   const rows = await listThreadRecords(agentGroupId, messagingGroupId, {
     excludeSessionId: ctx.caller === 'agent' ? ctx.sessionId : undefined,
   });
-  return formatThreadRecords(rows) || 'No thread records yet.';
+  return formatThreadRecords(await withNewerMessages(rows)) || 'No thread records yet.';
 }
 
 export interface BackfillCandidate {

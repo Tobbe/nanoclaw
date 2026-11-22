@@ -1,5 +1,6 @@
 import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
 import {
+  getChatSince,
   getPendingMessages,
   markProcessing,
   markCompleted,
@@ -35,7 +36,14 @@ import { isUploadTraceCommand, uploadTrace } from './upload-trace.js';
 import type { AgentProvider, AgentQuery, ProviderEvent, ProviderExchange } from './providers/types.js';
 import type { ProviderRuntimeContract } from './provider-contracts/registry.js';
 import { RUN_PROGRESS_ACTION, RunProgressSink, stopRunId, type RunProgressWrite } from './progress/sink.js';
-import { THREAD_RECORD_ACTION, ThreadRecorder, askSmallModel } from './thread-record.js';
+import {
+  CHAT_SINCE_LIMIT,
+  THREAD_RECORD_ACTION,
+  ThreadRecorder,
+  askSmallModel,
+  chatTranscript,
+} from './thread-record.js';
+import type { ChatCursor } from './mailbox/types.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -828,13 +836,22 @@ function noteThreadRecord(routing: RoutingContext, prompt: string, result: strin
   if (process.env.NANOCLAW_THREAD_RECORDS === 'off') return;
   if (routing.taskRun || !routing.platformId || !routing.channelType || routing.channelType === 'agent') return;
   const target = { platformId: routing.platformId, channelType: routing.channelType, threadId: routing.threadId };
-  threadRecorder ??= new ThreadRecorder({ summarize: askSmallModel, send: (record) => writeThreadRecord(record, target), log });
+  threadRecorder ??= new ThreadRecorder({
+    summarize: askSmallModel,
+    send: (record, covered) => writeThreadRecord(record, target, covered),
+    readChat: (after) => {
+      const chat = getChatSince(after, CHAT_SINCE_LIMIT);
+      return chat && chatTranscript(chat, after);
+    },
+    log,
+  });
   void threadRecorder.note(prompt, result);
 }
 
 async function writeThreadRecord(
   record: string,
   target: { platformId: string; channelType: string; threadId: string | null },
+  covered: ChatCursor | null,
 ): Promise<void> {
   await writeMessageOut({
     id: generateId(),
@@ -842,7 +859,7 @@ async function writeThreadRecord(
     platform_id: target.platformId,
     channel_type: target.channelType,
     thread_id: target.threadId,
-    content: JSON.stringify({ action: THREAD_RECORD_ACTION, record }),
+    content: JSON.stringify({ action: THREAD_RECORD_ACTION, record, ...(covered ? { covered } : {}) }),
   });
 }
 

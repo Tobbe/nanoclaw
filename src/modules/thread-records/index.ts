@@ -8,7 +8,7 @@ import { registerDeliveryAction } from '../../delivery.js';
 import { unguarded } from '../../guard/index.js';
 import { log } from '../../log.js';
 import { saveThreadRecord } from '../cross-session-context/index.js';
-import { backfillThreadRecordFrom } from '../cross-session-context/thread-records.js';
+import { backfillThreadRecordFrom, parseCovered } from '../cross-session-context/thread-records.js';
 
 registerDeliveryAction(
   'thread_record',
@@ -17,7 +17,9 @@ registerDeliveryAction(
       log.warn('thread_record: no record in payload', { sessionId: session.id });
       return;
     }
-    if (await saveThreadRecord(session, content.record)) log.debug('thread_record saved', { sessionId: session.id });
+    if (await saveThreadRecord(session, content.record, new Date(), parseCovered(content.covered))) {
+      log.debug('thread_record saved', { sessionId: session.id });
+    }
   },
   unguarded(
     "stores the session's own summary for its agent group's other threads in the same conversation; grants nothing",

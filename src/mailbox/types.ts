@@ -79,6 +79,8 @@ export interface RecurringMessage {
 }
 
 export interface MailboxHistoryMessage {
+  /** Position in its table; thread records count covered messages by it. */
+  seq?: number;
   timestamp: string;
   kind: string;
   content: string;

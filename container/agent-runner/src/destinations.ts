@@ -64,7 +64,13 @@ export function buildSystemPromptAddendum(assistantName?: string, mode: SessionM
   const sections: string[] = [];
 
   if (assistantName) {
-    sections.push(['# You are ' + assistantName, '', `Your name is **${assistantName}**. Use it when the channel asks who you are, when introducing yourself, and when signing any message that explicitly calls for a signature.`].join('\n'));
+    sections.push(
+      [
+        '# You are ' + assistantName,
+        '',
+        `Your name is **${assistantName}**. Use it when the channel asks who you are, when introducing yourself, and when signing any message that explicitly calls for a signature.`,
+      ].join('\n'),
+    );
   }
 
   sections.push(buildDestinationsSection(mode));
@@ -93,8 +99,8 @@ export function privateDmLines(env: NodeJS.ProcessEnv = process.env): string[] {
     '',
     "- Don't repeat, quote or hint at it in a channel or in anyone else's DM, unless they ask you to.",
     "- Don't write it to `/workspace/agent/memory/` or other files under `/workspace/agent/`: every conversation reads those. Keep notes about this DM in `/workspace/dm-notes.md` instead, which only this DM sees. Facts meant for the whole team (a decision, a convention) can go to shared memory only when this person says so.",
-    "- If it matters to others, suggest they bring it up themselves, or ask whether you may.",
-    '- This DM\'s past conversations are archived in `/workspace/conversations/`, not the shared folder.',
+    '- If it matters to others, suggest they bring it up themselves, or ask whether you may.',
+    "- This DM's past conversations are archived in `/workspace/conversations/`, not the shared folder.",
     '',
   ];
 }
@@ -110,9 +116,9 @@ function buildReadingSection(): string {
     '',
     'Chat turns can include:',
     '',
-    '- `<message>` — the message you are answering. `<dm-history>` and `<channel-history>` are this thread\'s own earlier timeline. One marked `answered="in its own thread"` started a thread you already replied in: it\'s done, so don\'t answer it again.',
+    "- `<message>` — the message you are answering. `<dm-history>` and `<channel-history>` are this thread's own earlier timeline. One marked `answered=\"in its own thread\"` started a thread you already replied in: it's done, so don't answer it again.",
     '- `<cross-session-context>` — a copy of something from elsewhere in this conversation: another thread, or a message you or a scheduled task posted here. Its `from` says where; `sender="you"` marks your own. If you can\'t tell whether the current message refers to it or to this thread, ask.',
-    '- `<channel-threads>` — the records of the other threads in this conversation, newest first: what each discussed, what was decided, and what is still open and on whom. Each is headed by its session id. They are summaries; for the exact words open the thread with `ncl sessions history <id>`.',
+    '- `<channel-threads>` — the records of the other threads in this conversation, newest first: what each discussed, what was decided, and what is still open and on whom. Each is headed by its session id. They are summaries; messages that came after a record\'s last update follow it as written ("Since this record"). For the exact words open the thread with `ncl sessions history <id>`.',
     '',
     'You took part in every thread here, so answer like someone who followed them all. For "what did we say about X?", "what is still open?" or "do I owe anyone an answer?", check `<channel-threads>` (or `ncl sessions records`) and read the threads that matter. When that doesn\'t settle it, or the question may concern another channel or an older thread, ask `ncl sessions recall --question "<the question>"`: it reads the records of every thread you can read and answers by meaning, in any language. For exact wording or something no record covers, use `ncl sessions search --query "<words>"`: it matches words as written, so give both languages and synonyms (e.g. "farve farver color colour"). Never say you can\'t see the other threads.',
     '',

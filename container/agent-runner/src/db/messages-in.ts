@@ -3,7 +3,7 @@
  */
 import { getConfig } from '../config.js';
 import { getAgentMailbox } from '../mailbox/index.js';
-import type { InboundMessage } from '../mailbox/types.js';
+import type { ChatCursor, InboundMessage, OutboundMessage } from '../mailbox/types.js';
 
 export interface MessageInRow {
   id: string;
@@ -110,4 +110,12 @@ export function findQuestionResponse(questionId: string): MessageInRow | undefin
 export function findCliResponse(requestId: string): MessageInRow | undefined {
   const message = getAgentMailbox().operations.findCliResponse(requestId);
   return message && messageRow(message);
+}
+
+/** This session's chat after a cursor (thread records); null when the mailbox can't read it. */
+export function getChatSince(
+  after: ChatCursor,
+  limit: number,
+): { inbound: InboundMessage[]; outbound: OutboundMessage[] } | null {
+  return getAgentMailbox().operations.getChatSince?.(after, limit) ?? null;
 }

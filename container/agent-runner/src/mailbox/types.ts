@@ -43,6 +43,12 @@ export type SessionRouting = SessionRoutingRecord;
 export type OutboundMessageDraft = OutboundWrite;
 export type StateValue = Omit<StateRecord, 'key'>;
 
+/** The last inbound and outbound sequence numbers a thread record covers. */
+export interface ChatCursor {
+  inbound: number;
+  outbound: number;
+}
+
 export interface MailboxOperations {
   getPendingMessages(limit: number, isFirstPoll: boolean): InboundMessage[];
   markMessages(ids: string[], status: ProcessingStatus): void;
@@ -60,6 +66,13 @@ export interface MailboxOperations {
    * Optional: without it, a question whose card fails to post waits out its timeout.
    */
   getDeliveryStatus?(messageOutId: string): DeliveryRecord['status'] | null;
+  /**
+   * This session's chat messages after the given sequence numbers: the newest
+   * `limit` of each direction, oldest first. Thread records fold these, so a
+   * message no turn handled still reaches the record. Optional: without it, a
+   * record folds each turn's prompt instead.
+   */
+  getChatSince?(after: ChatCursor, limit: number): { inbound: InboundMessage[]; outbound: OutboundMessage[] };
   getState(key: string): StateValue | undefined;
   setState(key: string, value: string): void;
   deleteState(key: string): void;

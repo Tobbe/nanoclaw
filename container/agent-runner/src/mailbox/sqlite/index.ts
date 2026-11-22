@@ -12,6 +12,7 @@ import {
   sqliteFindCliResponse,
   sqliteFindQuestionResponse,
   sqliteGetAllDestinations,
+  sqliteGetChatSince,
   sqliteGetDeliveryStatus,
   sqliteGetMessageIn,
   sqliteGetMessageIdBySeq,
@@ -38,6 +39,7 @@ import {
 } from '../model.generated.js';
 import type {
   AgentMailbox,
+  ChatCursor,
   InboundMessage,
   MailboxOperations,
   MailboxSessionKey,
@@ -182,6 +184,14 @@ export class SqliteAgentMailbox implements AgentMailbox {
 
   getUndeliveredMessages(): OutboundMessage[] {
     return sqliteGetUndeliveredMessages().map(outboundMessage);
+  }
+
+  getChatSince(after: ChatCursor, limit: number) {
+    const rows = sqliteGetChatSince(after, limit);
+    return {
+      inbound: rows.inbound.map(parseInboundMessage).filter((m): m is InboundMessage => m !== undefined),
+      outbound: rows.outbound.map(outboundMessage),
+    };
   }
 
   getDeliveryStatus(messageOutId: string) {

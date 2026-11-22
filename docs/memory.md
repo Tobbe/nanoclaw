@@ -82,15 +82,25 @@ over untouched (see [provider-migration.md](provider-migration.md)).
 
 Memory holds durable facts. What happened in each conversation thread lives in
 thread records instead. After every answered turn in a chat thread, the runner
-asks a small model (Haiku) to fold the turn into that thread's record: a title,
+asks a small model (Haiku) to fold the thread's new messages into its record: a title,
 one line per topic in the order they came up (what was asked, decided or done,
 with PR numbers and links), and what is still open and on whom. Finished topics
 stay in the record, so a thread that moved on is still findable by its earlier
 subjects (`container/agent-runner/src/thread-record.ts`;
 `NANOCLAW_THREAD_RECORDS=off` turns it off).
 
-The runner sends each record to the host as a `thread_record` system action;
-the host keeps the newest per session (`thread_records`, central DB). A new
+The new messages are read from the session's own mailbox, after a cursor of
+the last inbound and outbound messages the record covers. A message no turn
+handled (context that didn't wake the agent, a failed turn, a failed update)
+is still folded in at the next update; the cursor only moves once a record
+is sent.
+
+The runner sends each record to the host as a `thread_record` system action,
+with that cursor; the host keeps the newest per session (`thread_records`,
+central DB). Wherever a record is shown (`<channel-threads>`, `ncl sessions
+records`, recall), the thread's messages after the cursor follow it as
+written, the newest 10, so a reader never misses what came after the last
+update. A record from before cursors goes by the time it was written. A new
 thread starts with the records of its conversation's other threads from the
 last 60 days, rendered as `<channel-threads>`. Only records from the same
 messaging group are shared, so a channel never sees a DM's threads.

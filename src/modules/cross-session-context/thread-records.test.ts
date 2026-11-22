@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const written: Array<Record<string, unknown>> = [];
-type HistoryRow = { timestamp: string; kind: string; content: string };
+type HistoryRow = { seq?: number; timestamp: string; kind: string; content: string };
 let histories: Record<string, { inbound: HistoryRow[]; outbound: HistoryRow[] }> = {};
 
 vi.mock('../../session-manager.js', () => ({
@@ -135,6 +135,71 @@ describe('thread records', () => {
     expect(content.text).not.toContain('Private DM');
     expect(content.text).not.toContain('Itself');
     expect(written[0].trigger).toBe(false);
+  });
+
+  it("shows a thread's messages after the record's cursor with it, as written", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await records.saveThreadRecord(session('s-buttons') as any, BUTTONS, new Date(NOW), { inbound: 4, outbound: 3 });
+    histories['s-buttons'] = {
+      inbound: [
+        { seq: 4, ...chat('2026-11-20T11:00:00.000Z', 'Covered already') },
+        { seq: 6, ...chat('2026-11-20T11:30:00.000Z', 'Kan vi også\nfå grøn?') },
+        {
+          seq: 8,
+          timestamp: '2026-11-20T11:31:00.000Z',
+          kind: 'chat',
+          content: JSON.stringify({ text: 'copy of another thread', echo: { surface: 'x' } }),
+        },
+      ],
+      outbound: [
+        { seq: 3, ...chat('2026-11-20T11:01:00.000Z', 'Covered reply') },
+        {
+          seq: 5,
+          timestamp: '2026-11-20T11:35:00.000Z',
+          kind: 'chat',
+          content: JSON.stringify({ text: 'Ja, PR #72' }),
+        },
+      ],
+    };
+    const shown = await records.withNewerMessages(await records.listThreadRecords(agentGroup.id, mg.id), 'UTC');
+    const text = records.formatThreadRecords(shown, 'UTC');
+    expect(text).toContain(`${BUTTONS}\n\nSince this record:\n`);
+    expect(text).toMatch(/Lise: Kan vi også få grøn\?\n.*you: Ja, PR #72$/);
+    expect(text).not.toContain('Covered');
+    expect(text).not.toContain('copy of another thread');
+  });
+
+  it('goes by the time written for a record from before cursors, and keeps the newest', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await records.saveThreadRecord(session('s-buttons') as any, BUTTONS, new Date('2026-11-20T10:00:00.000Z'));
+    histories['s-buttons'] = {
+      inbound: [
+        chat('2026-11-20T09:59:00.000Z', 'Before the record'),
+        ...Array.from({ length: 12 }, (_, i) => chat(`2026-11-20T11:${String(10 + i)}:00.000Z`, `After ${i + 1}`)),
+      ],
+      outbound: [],
+    };
+    const [row] = await records.withNewerMessages(await records.listThreadRecords(agentGroup.id, mg.id), 'UTC');
+    expect(row.newer?.lines).toHaveLength(records.NEWER_MESSAGES_MAX);
+    expect(row.newer?.more).toBe(2);
+    expect(row.newer?.lines[0]).toContain('After 3');
+    expect(records.formatThreadRecords([row], 'UTC')).toContain(
+      'Since this record (the newest 10; 2 earlier in `ncl sessions history s-buttons`):',
+    );
+  });
+
+  it('shows a record alone when nothing came after it', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await records.saveThreadRecord(session('s-buttons') as any, BUTTONS, new Date(NOW), { inbound: 4, outbound: 3 });
+    histories['s-buttons'] = { inbound: [{ seq: 4, ...chat('2026-11-20T11:00:00.000Z', 'Covered') }], outbound: [] };
+    const shown = await records.withNewerMessages(await records.listThreadRecords(agentGroup.id, mg.id), 'UTC');
+    expect(records.formatThreadRecords(shown, 'UTC')).not.toContain('Since this record');
+  });
+
+  it("reads the runner's cursor, and ignores a malformed one", () => {
+    expect(records.parseCovered({ inbound: 4, outbound: 3 })).toEqual({ inbound: 4, outbound: 3 });
+    expect(records.parseCovered({ inbound: '4', outbound: 3 })).toBeNull();
+    expect(records.parseCovered(undefined)).toBeNull();
   });
 
   it('leaves an existing thread alone', async () => {

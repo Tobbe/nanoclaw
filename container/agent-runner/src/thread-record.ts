@@ -3,23 +3,31 @@
  * in OTHER threads of the same channel knows what was discussed where, the
  * way a person who followed every thread would.
  *
- * After each answered turn the runner asks a small model to fold the turn
- * into this thread's record (topics in the order they came up, what was
- * decided, what is still open and on whom). The record lives in the session
- * folder and is sent to the host as a `thread_record` system action; the
- * host stores it and hands the channel's records to every new thread.
+ * After each answered turn the runner asks a small model to fold this
+ * thread's new messages into its record (topics in the order they came up,
+ * what was decided, what is still open and on whom). The new messages are
+ * read from the session's own mailbox, after a cursor of the last ones the
+ * record covers, so a message no turn handled (accumulated context, a failed
+ * turn, a failed update) still reaches the record at the next update. The
+ * record lives in the session folder and is sent to the host as a
+ * `thread_record` system action with that cursor; the host stores both,
+ * shows any messages newer than the cursor alongside the record, and hands
+ * the channel's records to every new thread.
  *
  * Updates run one at a time, off the reply path: the reply is already out
- * when a record is written, and a failed update only means the record is a
- * turn behind until the next one.
+ * when a record is written.
  */
 import fs from 'fs';
+
+import type { ChatCursor, InboundMessage, OutboundMessage } from './mailbox/types.js';
 
 export const THREAD_RECORD_ACTION = 'thread_record';
 export const THREAD_RECORD_MAX_CHARS = 2_000;
 /** How much of one turn the summarizer sees. */
 const TURN_MAX_CHARS = 12_000;
 const DEFAULT_RECORD_FILE = '/workspace/.thread-record.md';
+/** Messages per direction one update reads; after a longer gap it keeps the newest. */
+export const CHAT_SINCE_LIMIT = 200;
 
 /** Length the record aims to stay under, leaving room below the hard cap. */
 export const THREAD_RECORD_TARGET_CHARS = 1_500;
@@ -28,7 +36,7 @@ export const RECORD_INSTRUCTIONS = [
   'You keep a short record of one chat thread for a team assistant. Other threads read it later to find',
   'out what was discussed here, so every topic must stay findable after the thread moves on.',
   '',
-  'Fold the new turn into the record and reply with the whole updated record, nothing else:',
+  'Fold the new turn or messages into the record and reply with the whole updated record, nothing else:',
   '- Line 1: a short title naming the thread’s subjects (max 10 words).',
   '- Then one line per topic, in the order they came up:',
   '  `- <Topic>: <what was decided or done, and by whom; PR number or link>`',
@@ -63,6 +71,71 @@ export function stripOtherThreads(prompt: string): string {
     .replace(/<channel-threads\b[\s\S]*?<\/channel-threads>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+export interface TranscriptRow {
+  timestamp: string;
+  direction: 'in' | 'out';
+  kind: string;
+  sender: string;
+  text: string;
+  ambient?: boolean;
+}
+
+/** A thread's own chat lines, oldest first: no ambient copies, no system rows. */
+export function transcriptLines(rows: TranscriptRow[]): string[] {
+  return rows
+    .filter((r) => !r.ambient && r.text.trim() && (r.kind === 'chat' || r.kind === 'chat-sdk'))
+    .map(
+      (r) =>
+        `[${r.timestamp.slice(0, 16).replace('T', ' ')}] ${r.direction === 'out' ? 'you' : r.sender || 'someone'}: ${r.text.trim()}`,
+    );
+}
+
+function messageText(content: string): { text: string; sender: string; ambient: boolean } {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    return {
+      text: typeof parsed.text === 'string' ? parsed.text : '',
+      sender: typeof parsed.sender === 'string' ? parsed.sender : '',
+      ambient: parsed.echo !== undefined,
+    };
+  } catch {
+    return { text: content, sender: '', ambient: false };
+  }
+}
+
+/** Channel types that carry copies from elsewhere, never this thread's own messages. */
+const NOT_THIS_THREAD = new Set(['session-echo', 'agent']);
+
+/**
+ * A session's chat rows → this thread's transcript rows, oldest first, and
+ * the cursor past every row read (skipped ones too, so they aren't read again).
+ */
+export function chatTranscript(
+  chat: { inbound: InboundMessage[]; outbound: OutboundMessage[] },
+  after: ChatCursor,
+): { rows: TranscriptRow[]; through: ChatCursor } {
+  const through = { ...after };
+  const rows: TranscriptRow[] = [];
+  for (const m of chat.inbound) {
+    through.inbound = Math.max(through.inbound, m.sequence ?? 0);
+    if (m.channelType && NOT_THIS_THREAD.has(m.channelType)) continue;
+    const { text, sender, ambient } = messageText(m.content);
+    rows.push({ timestamp: m.timestamp, direction: 'in', kind: m.kind, sender, text, ...(ambient ? { ambient } : {}) });
+  }
+  for (const m of chat.outbound) {
+    through.outbound = Math.max(through.outbound, m.sequence ?? 0);
+    rows.push({
+      timestamp: m.timestamp,
+      direction: 'out',
+      kind: m.kind,
+      sender: '',
+      text: messageText(m.content).text,
+    });
+  }
+  rows.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
+  return { rows, through };
 }
 
 function clip(text: string, max: number): string {
@@ -104,18 +177,40 @@ export function cleanRecord(reply: string): string | null {
 export interface ThreadRecorderOptions {
   /** Run one prompt on a small model, returning its text. */
   summarize: (prompt: string) => Promise<string>;
-  /** Hand the updated record to the host. */
-  send: (record: string) => Promise<void>;
+  /** Hand the updated record to the host, with the cursor of the last messages it covers. */
+  send: (record: string, covered: ChatCursor | null) => Promise<void>;
+  /**
+   * This thread's chat after a cursor (the mailbox's `getChatSince`). Null or
+   * absent: each turn's own prompt is folded instead.
+   */
+  readChat?: (after: ChatCursor) => { rows: TranscriptRow[]; through: ChatCursor } | null;
   log: (message: string) => void;
   recordFile?: string;
 }
 
+const START: ChatCursor = { inbound: 0, outbound: 0 };
+
 export class ThreadRecorder {
   private chain: Promise<void> = Promise.resolve();
   private readonly file: string;
+  private readonly cursorFile: string;
 
   constructor(private readonly options: ThreadRecorderOptions) {
     this.file = options.recordFile ?? DEFAULT_RECORD_FILE;
+    this.cursorFile = `${this.file}.cursor.json`;
+  }
+
+  /** The last messages the record covers; null before the first chat-based update. */
+  cursor(): ChatCursor | null {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.cursorFile, 'utf-8')) as Partial<ChatCursor>;
+      if (typeof parsed.inbound === 'number' && typeof parsed.outbound === 'number') {
+        return { inbound: parsed.inbound, outbound: parsed.outbound };
+      }
+    } catch {
+      /* none yet */
+    }
+    return null;
   }
 
   current(): string | null {
@@ -134,14 +229,41 @@ export class ThreadRecorder {
 
   private async update(prompt: string, result: string | null): Promise<void> {
     try {
-      const reply = await this.options.summarize(buildRecordPrompt(this.current(), prompt, result));
-      const record = cleanRecord(reply);
+      const previous = this.current();
+      const cursor = this.cursor();
+      let turn = prompt;
+      let reply = result;
+      let through: ChatCursor | null = null;
+      // A record from before cursors existed folds this turn as it always
+      // did, then starts counting; anything else reads the stored messages.
+      const chat = cursor || !previous ? this.options.readChat?.(cursor ?? START) : null;
+      if (chat) {
+        const lines = transcriptLines(chat.rows);
+        if (lines.length === 0) {
+          // Nothing new (an earlier update this turn already folded it).
+          if (!cursor || chat.through.inbound !== cursor.inbound || chat.through.outbound !== cursor.outbound) {
+            this.saveCursor(chat.through);
+          }
+          return;
+        }
+        turn = `<new-messages>\n${lines.join('\n')}\n</new-messages>`;
+        reply = null;
+        through = chat.through;
+      } else if (this.options.readChat) {
+        through = this.options.readChat(START)?.through ?? null;
+      }
+      const record = cleanRecord(await this.options.summarize(buildRecordPrompt(previous, turn, reply)));
       if (!record) return;
       fs.writeFileSync(this.file, `${record}\n`);
-      await this.options.send(record);
+      await this.options.send(record, through);
+      if (through) this.saveCursor(through);
     } catch (err) {
       this.options.log(`thread record update failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  private saveCursor(cursor: ChatCursor): void {
+    fs.writeFileSync(this.cursorFile, `${JSON.stringify(cursor)}\n`);
   }
 }
 
