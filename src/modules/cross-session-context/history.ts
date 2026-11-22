@@ -22,6 +22,9 @@ import { formatLocalStamp } from '../../timezone.js';
 import type { CallerContext } from '../../cli/frame.js';
 
 export const HISTORY_DEFAULT_LIMIT = 50;
+/** Without `--all`, rows read per table to still fill `limit` after dropping system rows. */
+const HISTORY_SCAN_FACTOR = 4;
+const HISTORY_SCAN_MAX = 8_000;
 /** Per-line text cap in the human pipe-separated rendering. */
 export const HISTORY_TEXT_MAX_CHARS = 200;
 
@@ -84,6 +87,11 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
   if (!sessionId) throw new Error('session id is required');
   const limitRaw = Number(args.limit ?? HISTORY_DEFAULT_LIMIT);
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : HISTORY_DEFAULT_LIMIT;
+  // By default only the conversation itself: no system rows (progress cards,
+  // record updates, ncl requests) and no ambient copies of other threads,
+  // which crowd out the messages a reader is looking for. `--all` keeps them.
+  const all = args.all === true || args.all === 'true';
+  const scan = all ? limit : Math.min(limit * HISTORY_SCAN_FACTOR, HISTORY_SCAN_MAX);
 
   const session = await getSession(sessionId);
   // Self-scope (see header): cross-group agents get "not found", never "forbidden".
@@ -101,8 +109,8 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
   const rows: HistoryRow[] = [];
 
   const history = await withExistingMailboxSession(session.agent_group_id, session.id, (mailbox) => ({
-    inbound: mailbox.getInboundHistory(limit),
-    outbound: mailbox.getOutboundHistory(limit),
+    inbound: mailbox.getInboundHistory(scan),
+    outbound: mailbox.getOutboundHistory(scan),
   }));
 
   if (history) {
@@ -125,7 +133,8 @@ export async function sessionHistory(args: Record<string, unknown>, ctx: CallerC
   }
 
   rows.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
-  return rows.slice(-limit);
+  const shown = all ? rows : rows.filter((r) => r.kind !== 'system' && !r.ambient);
+  return shown.slice(-limit);
 }
 
 /**

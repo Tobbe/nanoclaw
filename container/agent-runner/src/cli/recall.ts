@@ -50,8 +50,10 @@ export interface RecallDeps {
 }
 
 export const FOOTER = [
-  'These are pointers, not the answer. Before you answer, open the threads above with',
-  '`ncl sessions history <session id>` and read what was actually said, the newest messages too.',
+  'These are pointers, not the answer. Open every thread you will cite with',
+  '`ncl sessions history <session id>` (all of them, not a few) and read what was actually said, the',
+  'newest messages too. Leave out what you did not open rather than citing it from these lines, and',
+  'never tell the reader to check something because you only had summaries.',
   'Then, for each item you would call unclear or unconfirmed, search for that item before answering:',
   '`ncl sessions search --query "<its key words in both languages, with synonyms>"` (e.g. "case casen',
   'Frydenlund rigtige"), and open the thread it finds; check the work itself (repo, PRs, preview site) too.',

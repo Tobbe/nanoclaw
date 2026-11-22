@@ -63,7 +63,9 @@ registerResource({
     history: {
       access: 'open',
       description:
-        'Read a session transcript: inbound + outbound messages merged chronologically.\n\n' +
+        'Read a session transcript: inbound + outbound messages merged chronologically. Only the ' +
+        'conversation itself by default; `--all` adds system rows (progress cards, record updates, ncl ' +
+        'requests) and copies of other threads.\n\n' +
         'Output: pipe-separated lines "timestamp|direction(in/out)|kind|sender|text" (text capped at ' +
         '200 chars), the newest --limit rows in chronological order; `--json` returns the raw rows ' +
         'with ISO timestamps and uncapped text. Use after `ncl sessions list` to ' +
@@ -77,6 +79,11 @@ registerResource({
           type: 'number',
           description: `Max rows returned, newest first (default ${HISTORY_DEFAULT_LIMIT}).`,
           default: HISTORY_DEFAULT_LIMIT,
+        },
+        {
+          name: 'all',
+          type: 'boolean',
+          description: 'Also system rows and ambient copies of other threads (hidden by default).',
         },
       ],
       // Self-scoped in the handler: custom ops bypass the dispatcher's generic

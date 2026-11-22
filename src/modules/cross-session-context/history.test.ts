@@ -112,6 +112,36 @@ describe('sessionHistory', () => {
     expect(berlin.startsWith('2026-08-01 12:00|')).toBe(true);
   });
 
+  it('shows only the conversation by default, everything with --all, and still fills --limit', async () => {
+    await writeInbound('in-1', '2026-08-01T10:00:00.000Z', 'Lise asks');
+    await writeSessionMessage(AG, SESS, {
+      id: 'echo-1',
+      kind: 'chat',
+      timestamp: '2026-08-01T10:01:00.000Z',
+      platformId: null,
+      channelType: 'session-echo',
+      threadId: null,
+      content: JSON.stringify({ text: 'copy of another thread', echo: { surface: 'x' } }),
+    });
+    for (let i = 0; i < 6; i++) {
+      await writeOutboundDirect(AG, SESS, {
+        id: `sys-${i}`,
+        kind: 'system',
+        platformId: 'D1',
+        channelType: 'slack',
+        threadId: null,
+        content: JSON.stringify({ action: 'run_progress' }),
+      });
+    }
+    await writeInbound('in-2', '2026-08-01T10:02:00.000Z', 'Lise again');
+
+    const rows = await sessionHistory({ id: SESS, limit: 2 }, HOST);
+    expect(rows.map((r) => r.text)).toEqual(['Lise asks', 'Lise again']);
+    const all = await sessionHistory({ id: SESS, all: true }, HOST);
+    expect(all.map((r) => r.kind)).toContain('system');
+    expect(all.map((r) => r.text)).toContain('copy of another thread');
+  });
+
   it('applies --limit keeping the NEWEST rows', async () => {
     for (let i = 0; i < 5; i++) {
       await writeInbound(`in-${i}`, `2026-08-01T10:0${i}:00.000Z`, `msg ${i}`);

@@ -16,8 +16,10 @@ channels can read this DM.
   `--since <YYYY-MM-DD>`: it then reads only the threads active since then,
   which is faster and cheaper.
   It names the threads. Its answer is a set of summaries, not the answer:
-  before you reply, open the threads it names with
-  `ncl sessions history <session id>` and read what was actually said. A
+  before you reply, open every thread you will cite with
+  `ncl sessions history <session id>`, all of them, and read what was
+  actually said; leave out what you did not open rather than citing it
+  from a summary. A
   topic can span threads (asked for in one, done in another), so for each
   item you would call unclear or unconfirmed, search for that item first
   (`ncl sessions search` with its key words in both languages) and open

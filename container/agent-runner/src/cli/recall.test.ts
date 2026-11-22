@@ -21,6 +21,7 @@ describe('recall', () => {
     expect(text).toStartWith('[2026-11-14 11:00 · #website · s-buttons]');
     expect(text).toContain('ncl sessions history <session id>');
     expect(text).toContain('These are pointers, not the answer.');
+    expect(text).toContain('Open every thread you will cite');
     expect(text).toContain('for each item you would call unclear');
   });
 
