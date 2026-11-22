@@ -20,13 +20,15 @@ describe('recall', () => {
     expect(seen).toContain(RECORDS);
     expect(text).toStartWith('[2026-11-14 11:00 · #website · s-buttons]');
     expect(text).toContain('ncl sessions history <session id>');
-    expect(text).toContain('These are summaries, not the answer.');
+    expect(text).toContain('These are pointers, not the answer.');
+    expect(text).toContain('for each item you would call unclear');
   });
 
   it('asks for the threads that settle a topic too, and their newer messages', () => {
     const prompt = buildRecallPrompt('is the real case up?', RECORDS);
     expect(prompt).toContain('not only the one where it was raised');
-    expect(prompt).toContain('"Since this record" lines');
+    expect(prompt).toContain('"Since this record" lines are newer');
+    expect(prompt).toContain('at most 20 words');
   });
 
   it('skips the model when there are no records, and says so when nothing matches', async () => {

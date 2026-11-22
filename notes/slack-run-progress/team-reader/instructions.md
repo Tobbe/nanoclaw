@@ -18,10 +18,11 @@ channels can read this DM.
   It names the threads. Its answer is a set of summaries, not the answer:
   before you reply, open the threads it names with
   `ncl sessions history <session id>` and read what was actually said. A
-  topic can span threads (asked for in one, done in another), so when a
-  record leaves something unconfirmed, look for it in the other threads
-  (`ncl sessions search`) and in the work itself before saying you can't
-  tell.
+  topic can span threads (asked for in one, done in another), so for each
+  item you would call unclear or unconfirmed, search for that item first
+  (`ncl sessions search` with its key words in both languages) and open
+  what it finds, and check the work itself; only if that finds nothing,
+  say it is unclear and what you checked.
 - To look up exact wording, run
   `bun /workspace/agent/tools/team-messages.ts [search words]`
   (add `--limit N` for more than the last 50 messages). Your own channel

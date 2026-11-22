@@ -17,12 +17,15 @@ export const RECALL_INSTRUCTIONS = [
   'Find the threads that answer or bear on the question, judging by meaning in any language',
   '(Danish, English, …), not by matching words.',
   '',
-  'A topic can span threads: one asks for something, another shows it was done or changed. Include',
-  'the threads that settle or update what the question is about, not only the one where it was raised.',
+  'A topic can span threads: one asks for something, another shows it was done or changed, often under',
+  'another name (a "real case" asked for in one thread can be "the case text in PR #12" in another).',
+  'A record\'s "Since this record" lines are newer than the record: read them too.',
+  'Include the threads that settle or update what the question is about, not only the one where it was raised.',
   '',
-  'Reply with up to 8 threads, most relevant first. For each: its header line exactly as given,',
-  'then the record lines that matter and any "Since this record" lines that matter, copied as written.',
-  'Nothing else.',
+  'Reply with up to 10 threads, most relevant first, two lines each and nothing else:',
+  '- its header line exactly as given;',
+  '- `  ↳ ` and what in it bears on the question, at most 20 words (who, what, PR or link).',
+  'The reader opens each thread for the details, so keep it short.',
   `If no thread bears on the question, reply exactly ${NO_MATCH}.`,
 ].join('\n');
 
@@ -47,11 +50,12 @@ export interface RecallDeps {
 }
 
 export const FOOTER = [
-  'These are summaries, not the answer. Before you answer, open the threads above with',
+  'These are pointers, not the answer. Before you answer, open the threads above with',
   '`ncl sessions history <session id>` and read what was actually said, the newest messages too.',
-  'Where a record leaves something unconfirmed ("not confirmed here", "no answer yet"), look for it in',
-  'other threads (`ncl sessions search`, both languages) and in the work itself (repo, PRs, preview site)',
-  'before saying you can’t tell.',
+  'Then, for each item you would call unclear or unconfirmed, search for that item before answering:',
+  '`ncl sessions search --query "<its key words in both languages, with synonyms>"` (e.g. "case casen',
+  'Frydenlund rigtige"), and open the thread it finds; check the work itself (repo, PRs, preview site) too.',
+  'Only if that finds nothing, say it is unclear and what you checked.',
 ].join('\n');
 
 /** The text recall prints. Throws on a missing question or a failed fetch/model call. */
