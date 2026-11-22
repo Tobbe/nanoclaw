@@ -213,6 +213,9 @@ describe('the running step', () => {
       'Running a build, committing and pushing changes',
     );
     expect(presentTense('Set up git')).toBe('Setting up git');
+    expect(presentTense('Searched the thread records')).toBe('Searching the thread records');
+    expect(presentTense('Scheduled a task')).toBe('Scheduling a task');
+    expect(presentTense('Organized files')).toBe('Organizing files');
     expect(presentTense('Run the unit tests')).toBe('Run the unit tests');
     expect(presentTense('Used my_server: do thing')).toBe('Using my_server: do thing');
   });

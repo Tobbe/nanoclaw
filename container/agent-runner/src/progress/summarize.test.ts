@@ -42,7 +42,9 @@ describe('summarizeStep', () => {
     expect(title('git config user.name CodeBot')).toBe('Set up git');
     // A fallback after || only runs when the first part fails.
     expect(
-      title('cd repos && (test -d site && cd site && git fetch -q origin && git reset -q --hard origin/main || git clone -q https://github.com/acme/site.git)'),
+      title(
+        'cd repos && (test -d site && cd site && git fetch -q origin && git reset -q --hard origin/main || git clone -q https://github.com/acme/site.git)',
+      ),
     ).toBe('Pulled the latest changes');
     expect(title('test -d site || git clone https://github.com/acme/site.git')).toBe('Cloned a repository');
     expect(title('git add -A && git commit -m "x"')).toBe('Committed changes');
@@ -54,7 +56,18 @@ describe('summarizeStep', () => {
     expect(title('grep -rn kloak src | grep -v x; head -20 src/a.yaml')).toBe('Searched the code');
     expect(title('cd repos && ls; cat notes.md')).toBe('Looked through the files');
     expect(title('cat README.md | head -50')).toBe('Read a file');
-    expect(title('mkdir -p out && cp a b')).toBe('Organised files');
+    expect(title('ncl sessions recall --question "What waits on Lise?" 2>&1 | head -60')).toBe(
+      'Searched the thread records',
+    );
+    expect(title('ncl sessions search --query "case casen"')).toBe('Searched past messages');
+    expect(title('ncl sessions history --id sess-1 --limit 80 | tail -40')).toBe('Read a thread');
+    expect(title('ncl sessions records --all')).toBe('Read the thread records');
+    expect(title('ncl sessions list')).toBe('Looked through the threads');
+    expect(title('ncl tasks create --name x --prompt y')).toBe('Scheduled a task');
+    expect(title('ncl groups config get')).toBe('Ran a NanoClaw command');
+    // Labels never carry the question asked.
+    expect(JSON.stringify(classifyCommand('ncl sessions recall --question "secret"'))).not.toContain('secret');
+    expect(title('mkdir -p out && cp a b')).toBe('Organized files');
     expect(title('python3 scripts/build_index.py')).toBe('Ran a script');
     expect(title('echo hi')).toBe('Ran a command');
   });
@@ -73,7 +86,10 @@ describe('summarizeStep', () => {
     expect(title('yarn build 2>&1 | grep error; git add -A && git commit -m x && git push')).toBe(
       'Ran a build, committed and pushed changes',
     );
-    expect(classifyCommand('pnpm test && git commit -m x')).toEqual({ title: 'Ran tests and committed changes', category: 'test' });
+    expect(classifyCommand('pnpm test && git commit -m x')).toEqual({
+      title: 'Ran tests and committed changes',
+      category: 'test',
+    });
     // A failure fallback isn't a step that normally runs.
     expect(title('git fetch && git checkout b || git clone https://x/y.git')).toBe('Pulled the latest changes');
     // Look-arounds chained together keep one label.

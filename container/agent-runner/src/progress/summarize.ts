@@ -61,11 +61,24 @@ const GIT_LABELS: Array<[RegExp, string]> = [
  * the line wins: `grep … ; head …` is a search, not a read.
  */
 const SHELL_LABELS: Array<[RegExp, StepSummary]> = [
+  // NanoClaw's own `ncl`: what it reads or does, never the question or ids
+  // asked. The more specific label comes first; at the same position the
+  // earlier pattern wins.
+  [new RegExp(`${SEG}ncl\\s+sessions\\s+recall\\b`), { title: 'Searched the thread records', category: 'inspect' }],
+  [new RegExp(`${SEG}ncl\\s+sessions\\s+search\\b`), { title: 'Searched past messages', category: 'inspect' }],
+  [new RegExp(`${SEG}ncl\\s+sessions\\s+history\\b`), { title: 'Read a thread', category: 'inspect' }],
+  [new RegExp(`${SEG}ncl\\s+sessions\\s+records\\b`), { title: 'Read the thread records', category: 'inspect' }],
+  [new RegExp(`${SEG}ncl\\s+sessions\\s+file\\b`), { title: 'Fetched a file from a thread', category: 'inspect' }],
+  [new RegExp(`${SEG}ncl\\s+sessions\\s+backfill-records\\b`), { title: 'Wrote thread records', category: 'run' }],
+  [new RegExp(`${SEG}ncl\\s+sessions\\b`), { title: 'Looked through the threads', category: 'inspect' }],
+  [new RegExp(`${SEG}ncl\\s+tasks\\s+(create|update)\\b`), { title: 'Scheduled a task', category: 'run' }],
+  [new RegExp(`${SEG}ncl\\s+tasks\\b`), { title: 'Checked scheduled tasks', category: 'inspect' }],
+  [new RegExp(`${SEG}ncl\\b`), { title: 'Ran a NanoClaw command', category: 'run' }],
   [new RegExp(`${SEG}(ls|tree|find|fd)\\b`), { title: 'Looked through the files', category: 'inspect' }],
   [new RegExp(`${SEG}(cat|head|tail|less|wc|sed\\s+-n)\\b`), { title: 'Read a file', category: 'inspect' }],
   [new RegExp(`${SEG}(grep|rg|ag)\\b`), { title: 'Searched the code', category: 'inspect' }],
   [new RegExp(`${SEG}(curl|wget)\\b`), { title: 'Fetched from the web', category: 'web' }],
-  [new RegExp(`${SEG}(mkdir|cp|mv|rm|touch|ln)\\b`), { title: 'Organised files', category: 'edit' }],
+  [new RegExp(`${SEG}(mkdir|cp|mv|rm|touch|ln)\\b`), { title: 'Organized files', category: 'edit' }],
   [new RegExp(`${SEG}(python3?|node|bun|deno|tsx|ruby|bash|sh)\\s+\\S`), { title: 'Ran a script', category: 'run' }],
 ];
 
