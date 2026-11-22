@@ -9,7 +9,7 @@ vi.mock('./config.js', async () => {
 import { closeDb, createAgentGroup, initTestDb, runMigrations } from './db/index.js';
 import { createMessagingGroup, createMessagingGroupAgent } from './db/messaging-groups.js';
 import { createSession } from './db/sessions.js';
-import { reviseInbound } from './inbound-revision.js';
+import { reviseInbound, revisionNote } from './inbound-revision.js';
 import { initSessionFolder, withExistingMailboxSession } from './session-manager.js';
 
 const TEST_DIR = '/tmp/nanoclaw-test-inbound-revision';
@@ -30,22 +30,42 @@ async function addSession(id: string, agentGroupId: string, mgId: string): Promi
   initSessionFolder(agentGroupId, id);
 }
 
-async function store(agentGroupId: string, sessionId: string, id: string, text: string): Promise<void> {
-  await withExistingMailboxSession(agentGroupId, sessionId, (mailbox) =>
-    mailbox.insertMessage({
+async function store(
+  agentGroupId: string,
+  sessionId: string,
+  id: string,
+  text: string,
+  status = 'pending',
+): Promise<void> {
+  await withExistingMailboxSession(agentGroupId, sessionId, async (mailbox) => {
+    await mailbox.insertMessage({
       id,
       kind: 'chat-sdk',
       timestamp: NOW,
       platformId: 'slack:C1',
       channelType: 'slack',
       threadId: 'slack:C1:T1',
-      content: JSON.stringify({ text }),
+      content: JSON.stringify({ text, sender: 'Lise' }),
       processAfter: null,
       recurrence: null,
       trigger: true,
       sourceSessionId: null,
       onWake: false,
-    }),
+    });
+    if (status !== 'pending') mailbox.markMessageFailed(id); // any non-pending status: already handed over
+  });
+}
+
+/** System notes written for the agent. */
+async function notes(agentGroupId: string, sessionId: string): Promise<string[]> {
+  return (
+    (await withExistingMailboxSession(agentGroupId, sessionId, (mailbox) =>
+      mailbox
+        .getInboundHistory(20)
+        .map((m) => JSON.parse(m.content) as { text: string; sender?: string })
+        .filter((c) => c.sender === 'system')
+        .map((c) => c.text),
+    )) ?? []
   );
 }
 
@@ -120,6 +140,42 @@ describe('reviseInbound', () => {
     expect(await texts('ag-2', 's-ag2')).toEqual([]);
   });
 
+  it('tells the agent when a message it already read is edited, in that thread only', async () => {
+    await store('ag-1', 's-thread', '111.1:ag-1', 'version 1', 'handled');
+    await store('ag-1', 's-other', '111.1:ag-1:echo:s-other', 'version 1');
+
+    await reviseInbound({
+      channelType: 'slack',
+      platformId: 'slack:C1',
+      messageId: '111.1',
+      revision: { kind: 'edited', text: 'version 11', at: NOW },
+    });
+
+    expect(await texts('ag-1', 's-thread')).toContain('version 11');
+    const [note] = await notes('ag-1', 's-thread');
+    expect(note).toMatch(/^Lise edited their message from .+\. Go by this version from now on:\nversion 11$/);
+    expect(await notes('ag-1', 's-other')).toEqual([]);
+  });
+
+  it("tells the agent about a deletion without repeating the text, but not when it hadn't read it yet", async () => {
+    await store('ag-1', 's-thread', '111.1:ag-1', 'call list', 'handled');
+    await store('ag-1', 's-other', '222.2:ag-1', 'not read yet');
+
+    for (const messageId of ['111.1', '222.2']) {
+      await reviseInbound({
+        channelType: 'slack',
+        platformId: 'slack:C1',
+        messageId,
+        revision: { kind: 'deleted', at: NOW },
+      });
+    }
+
+    const [note] = await notes('ag-1', 's-thread');
+    expect(note).toMatch(/^Lise deleted their message from .+\. Treat it as withdrawn/);
+    expect(note).not.toContain('call list');
+    expect(await notes('ag-1', 's-other')).toEqual([]);
+  });
+
   it('changes nothing for a channel no agent is wired to', async () => {
     expect(
       await reviseInbound({
@@ -129,5 +185,17 @@ describe('reviseInbound', () => {
         revision: { kind: 'deleted', at: NOW },
       }),
     ).toBe(0);
+  });
+});
+
+describe('revisionNote', () => {
+  it('names the sender and the local time of the original message', () => {
+    const original = { status: 'completed', timestamp: '2026-11-20T11:01:51.000Z', sender: 'Lise' };
+    expect(revisionNote({ kind: 'deleted', at: NOW }, original, 'Europe/Copenhagen')).toBe(
+      "Lise deleted their message from 2026-11-20 12:01. Treat it as withdrawn: don't act on it or bring it up.",
+    );
+    expect(revisionNote({ kind: 'edited', text: 'v2', at: NOW }, { ...original, sender: null }, 'UTC')).toBe(
+      'Someone edited their message from 2026-11-20 11:01. Go by this version from now on:\nv2',
+    );
   });
 });

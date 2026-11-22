@@ -176,6 +176,17 @@ function getTaskStats(db: Database.Database, seriesId: string): TaskStats {
 /** SQL condition that leaves out messages marked deleted by `reviseMessage`. */
 const NOT_DELETED = "NOT (json_valid(content) AND json_extract(content, '$.deleted') IS NOT NULL)";
 
+function senderOf(raw: string): string | null {
+  try {
+    const content: unknown = JSON.parse(raw);
+    const sender = (content as { sender?: unknown } | null)?.sender;
+    return typeof sender === 'string' && sender ? sender : null;
+  } catch (err) {
+    if (err instanceof SyntaxError) return null;
+    throw err;
+  }
+}
+
 /** The message content after an edit or deletion, or null when it isn't a chat message. */
 export function reviseContent(raw: string, revision: InboundRevision): string | null {
   let content: Record<string, unknown>;
@@ -317,10 +328,19 @@ export function wrapSqliteInbound(db: Database.Database, nextSequence = () => ne
     reviseMessage: (id, revision) => {
       const rows = db
         .prepare(
-          `SELECT id, status, content FROM messages_in
+          `SELECT id, status, timestamp, content FROM messages_in
             WHERE id = ? OR substr(id, 1, ?) = ?`,
         )
-        .all(id, id.length + 6, `${id}:echo:`) as Array<{ id: string; status: string; content: string }>;
+        .all(id, id.length + 6, `${id}:echo:`) as Array<{
+        id: string;
+        status: string;
+        timestamp: string;
+        content: string;
+      }>;
+      const own = rows.find((row) => row.id === id);
+      const original = own
+        ? { status: own.status, timestamp: sqliteTimestamp(own.timestamp), sender: senderOf(own.content) }
+        : null;
       const update = db.prepare('UPDATE messages_in SET content = ?, status = ? WHERE id = ?');
       let changed = 0;
       for (const row of rows) {
@@ -330,7 +350,7 @@ export function wrapSqliteInbound(db: Database.Database, nextSequence = () => ne
         const status = revision.kind === 'deleted' && row.status === 'pending' ? 'completed' : row.status;
         changed += update.run(content, status, row.id).changes;
       }
-      return changed;
+      return { rows: changed, original };
     },
     getInboundHistory: (limit) =>
       (

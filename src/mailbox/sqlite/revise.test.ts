@@ -38,7 +38,10 @@ describe('reviseMessage', () => {
     add('1.10:ag', { text: 'a different message whose id shares the prefix' });
     add('2.2:ag', { text: 'kept' });
 
-    expect(inbound.reviseMessage('1.1:ag', { kind: 'deleted', at: '2026-01-02T00:00:00.000Z' })).toBe(2);
+    expect(inbound.reviseMessage('1.1:ag', { kind: 'deleted', at: '2026-01-02T00:00:00.000Z' })).toEqual({
+      rows: 2,
+      original: { status: 'completed', timestamp: '2026-01-01T00:00:00.000Z', sender: 'Lise' },
+    });
     const deleted = JSON.parse(row('1.1:ag').content);
     expect(deleted).toEqual({ sender: 'Lise', text: '', deleted: '2026-01-02T00:00:00.000Z' });
     expect(JSON.parse(row('1.1:ag:echo:sess-2').content).deleted).toBe('2026-01-02T00:00:00.000Z');
@@ -61,7 +64,7 @@ describe('reviseMessage', () => {
     add('4.4:ag', { text: 'Rundere knapper', formatted: { old: true }, sender: 'Lise' }, 'pending');
     expect(
       inbound.reviseMessage('4.4:ag', { kind: 'edited', text: 'Runde knapper', at: '2026-01-02T00:00:00.000Z' }),
-    ).toBe(1);
+    ).toMatchObject({ rows: 1, original: { status: 'pending', sender: 'Lise' } });
     expect(row('4.4:ag')).toEqual({
       status: 'pending',
       content: JSON.stringify({ text: 'Runde knapper', sender: 'Lise', editedAt: '2026-01-02T00:00:00.000Z' }),
@@ -70,7 +73,10 @@ describe('reviseMessage', () => {
 
   it('changes nothing when no message has that id', () => {
     const { inbound } = mailbox();
-    expect(inbound.reviseMessage('9.9:ag', { kind: 'deleted', at: '2026-01-02T00:00:00.000Z' })).toBe(0);
+    expect(inbound.reviseMessage('9.9:ag', { kind: 'deleted', at: '2026-01-02T00:00:00.000Z' })).toEqual({
+      rows: 0,
+      original: null,
+    });
   });
 
   it('leaves content that is not a JSON object alone', () => {

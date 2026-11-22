@@ -99,6 +99,12 @@ export interface MailboxTimelineMessage {
 export type InboundRevision =
   { kind: 'edited'; text: string; formatted?: unknown; at: string } | { kind: 'deleted'; at: string };
 
+export interface RevisedMessage {
+  rows: number;
+  /** The message in its own thread before the change; null when it isn't stored there. */
+  original: { status: string; timestamp: string; sender: string | null } | null;
+}
+
 /** Host-visible inbound mailbox behavior. Storage layout and lifecycle are implementation-private. */
 export type WakeEvidence = 'woken' | 'chatter' | 'none';
 
@@ -146,9 +152,10 @@ export interface InboundMailbox {
   /**
    * Apply an edit or a deletion to the stored message `id` and to its copies
    * in other threads (`<id>:echo:<session>`). A deleted message that has not
-   * been handed to the agent yet is never handed over. Returns the rows changed.
+   * been handed to the agent yet is never handed over. Returns the rows
+   * changed, and how the message itself (not a copy) stood before the change.
    */
-  reviseMessage(id: string, revision: InboundRevision): number;
+  reviseMessage(id: string, revision: InboundRevision): RevisedMessage;
   /** Newest first. Deleted messages are left out. */
   getInboundHistory(limit: number): MailboxHistoryMessage[];
   getConversationRoot(): MailboxTimelineMessage | undefined;

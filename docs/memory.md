@@ -126,8 +126,12 @@ thread and the copies shared with other threads (`src/inbound-revision.ts`).
 When someone deletes one, its text and files are cleared and it is marked
 deleted, so history, search, "Since this record" lines and later record
 updates leave it out, and a deleted message still waiting for the agent is
-never handed over. A record that already folded it in keeps what it said, and
-an agent that already read it in a turn still remembers it. The bot's own messages are skipped, and a deleted thread parent
+never handed over. An agent that already read the message holds it in its
+conversation, so its thread also gets a short system note ("Lise edited their
+message from 2026-11-20 12:01. Go by this version from now on: …", or that it
+was deleted and should be treated as withdrawn, without repeating the text).
+The note doesn't start a turn; it arrives with the thread's next message. A
+record that already folded the message in keeps what it said. The bot's own messages are skipped, and a deleted thread parent
 that still has replies (Slack shows "This message was deleted") is not handled.
 
 Across conversations, an agent reads its own conversation plus the group's
