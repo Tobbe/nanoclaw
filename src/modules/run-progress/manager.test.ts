@@ -50,6 +50,7 @@ function harness(
   let failEdits = opts.failEdits ?? 0;
   const calls: Call[] = [];
   const saved: RunCardRow[] = [];
+  const liveCards: string[] = [];
   const manager = new RunCardManager({
     io: {
       async post(_target, content) {
@@ -69,6 +70,7 @@ function harness(
       saved.push(row);
     },
     isContainerRunning: () => running,
+    onLiveCard: (sessionId) => liveCards.push(sessionId),
     now: () => clock,
     config: { editTimeoutMs: 50, ...opts.config },
   });
@@ -83,6 +85,7 @@ function harness(
     manager,
     calls,
     saved,
+    liveCards,
     run,
     setRunning: (v: boolean) => {
       running = v;
@@ -177,6 +180,22 @@ describe('RunCardManager', () => {
       '⏳ Working on it · 18s',
       '⏳ Working on it · 23s',
     ]);
+  });
+
+  it('reports each live card post and update, but not the final one', async () => {
+    const h = harness();
+    h.manager.accept('sess', snap(1), TARGET);
+    await h.run(7000);
+    expect(h.liveCards).toEqual([]);
+    await h.run(1000);
+    expect(h.liveCards).toEqual(['sess']);
+    h.manager.accept('sess', snap(2), TARGET);
+    await h.run(3000);
+    expect(h.liveCards).toEqual(['sess', 'sess']);
+    h.manager.accept('sess', snap(3, { status: 'done', updatedAt: new Date(T0 + 12_000).toISOString() }), TARGET);
+    await h.run(3000);
+    expect(h.calls.at(-1)?.title).toContain('Done');
+    expect(h.liveCards).toEqual(['sess', 'sess']);
   });
 
   it('writes the final state, saves it and forgets the card', async () => {

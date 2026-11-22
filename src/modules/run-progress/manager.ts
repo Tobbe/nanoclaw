@@ -66,6 +66,11 @@ export interface RunCardManagerDeps {
   io: CardIO;
   save: (row: RunCardRow) => Promise<void>;
   isContainerRunning: (sessionId: string) => boolean;
+  /**
+   * A live card was posted or updated: it now shows the run is working, so
+   * the platform's own "typing" indicator can go (the card says more).
+   */
+  onLiveCard?: (sessionId: string) => void;
   now?: () => number;
   log?: { warn: (msg: string, data?: Record<string, unknown>) => void };
   config?: Partial<RunCardConfig>;
@@ -299,6 +304,7 @@ export class RunCardManager {
       card.renderedSeq = snapshot.seq;
       const wroteFinal = interrupted || isFinal(snapshot.status);
       if (wroteFinal) card.renderedFinal = true;
+      else this.deps.onLiveCard?.(card.sessionId);
       await this.persist(card, snapshot, interrupted ? 'cancelled' : snapshot.status, wroteFinal);
     } catch (err) {
       card.backoffUntil = this.now() + this.config.backoffMs;

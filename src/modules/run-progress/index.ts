@@ -20,7 +20,7 @@ import { onHostShutdown, onHostStart } from '../../host-lifecycle.js';
 import { log } from '../../log.js';
 import { registerMessageEngagedHook } from '../../router.js';
 import { writeSessionMessage } from '../../session-manager.js';
-import { clearTypingNow } from '../typing/index.js';
+import { clearTypingNow, stopTypingRefresh } from '../typing/index.js';
 import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
 import { STOP_ACTION_ID } from './render.js';
@@ -96,6 +96,9 @@ export const runCards = new RunCardManager({
   io: deliveryCardIO,
   save: saveRunCard,
   isContainerRunning: (sessionId) => containerRunning(sessionId),
+  // Once the card shows the run, "Typing…" only repeats it: take it down.
+  // A new message restarts typing until the next card update.
+  onLiveCard: (sessionId) => stopTypingRefresh(sessionId),
   log,
 });
 
