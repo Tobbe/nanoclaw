@@ -639,6 +639,17 @@ export function appendRawText(
   serialized.text = text ? `${text}\n\n${extra}` : extra;
 }
 
+/** The text of an edited message, the way `messageToInbound` stores it. */
+export function editedText(message: ChatMessage, extract?: RawTextExtractor): { text: string; formatted?: unknown } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const serialized = message.toJSON() as Record<string, any>;
+  if (message.raw) appendRawText(serialized, message.raw as Record<string, unknown>, extract);
+  return {
+    text: typeof serialized.text === 'string' ? serialized.text : '',
+    ...(serialized.formatted !== undefined ? { formatted: serialized.formatted } : {}),
+  };
+}
+
 /** A checked part as its Chat SDK element, rebuilt from the fields it may have and nothing else. */
 function buildCardPart(part: CardPart): CardChild {
   const props = (isRecord(part.props) ? part.props : {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -978,6 +989,30 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
         const channelId = adapter.channelIdFromThreadId(thread.id);
         await setupConfig.onInbound(channelId, thread.id, await messageToInbound(message, false, true));
       });
+
+      // Edits and deletions of messages already stored. Every stored copy
+      // follows the platform, so a deleted message is gone for the agent too.
+      // The bot's own messages (run cards are edited all the time) were never
+      // stored as inbound, so they are skipped before any lookup.
+      if (setupConfig.onInboundRevised) {
+        const onRevised = setupConfig.onInboundRevised.bind(setupConfig);
+        chat.onMessageUpdated(async (thread, message) => {
+          if (message.author?.isMe) return;
+          const edited = editedText(message, config.extractRawText);
+          await onRevised(adapter.channelIdFromThreadId(thread.id), message.id, {
+            kind: 'edited',
+            ...edited,
+            at: new Date().toISOString(),
+          });
+        });
+        chat.onMessageDeleted(async (event) => {
+          if (event.previousMessage?.author?.isMe) return;
+          await onRevised(adapter.channelIdFromThreadId(event.threadId), event.messageId, {
+            kind: 'deleted',
+            at: (event.deletedAt ?? new Date()).toISOString(),
+          });
+        });
+      }
 
       // Agent-mode assistant context: cache the latest "what the user is
       // viewing" per (channel, user). The installed chat core (4.41.1)

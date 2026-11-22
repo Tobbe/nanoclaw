@@ -91,6 +91,14 @@ export interface MailboxTimelineMessage {
   content: string;
 }
 
+/**
+ * A change the platform made to a message after it was stored: the author
+ * edited it, or it was deleted. A deleted message keeps its row (with the
+ * text and files cleared) so ids and sequence numbers stay stable.
+ */
+export type InboundRevision =
+  { kind: 'edited'; text: string; formatted?: unknown; at: string } | { kind: 'deleted'; at: string };
+
 /** Host-visible inbound mailbox behavior. Storage layout and lifecycle are implementation-private. */
 export type WakeEvidence = 'woken' | 'chatter' | 'none';
 
@@ -135,6 +143,13 @@ export interface InboundMailbox {
   armNextTask(originalId: string, task: Task): Promise<void>;
   countLiveTasks(): number;
   prunePendingMessages(channelType: string, before: string, keep: number): number;
+  /**
+   * Apply an edit or a deletion to the stored message `id` and to its copies
+   * in other threads (`<id>:echo:<session>`). A deleted message that has not
+   * been handed to the agent yet is never handed over. Returns the rows changed.
+   */
+  reviseMessage(id: string, revision: InboundRevision): number;
+  /** Newest first. Deleted messages are left out. */
   getInboundHistory(limit: number): MailboxHistoryMessage[];
   getConversationRoot(): MailboxTimelineMessage | undefined;
   findTaskBySeriesSlug(slug: string): TaskRecord | undefined;

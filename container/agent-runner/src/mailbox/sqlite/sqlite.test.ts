@@ -182,4 +182,17 @@ describe('getChatSince', () => {
     expect(chat.outbound.map((m) => m.id)).toEqual(['out-1']);
     expect(mailbox.getChatSince({ inbound: 0, outbound: 0 }, 1).inbound.map((m) => m.id)).toEqual(['in-8']);
   });
+
+  test('leaves out messages deleted on the platform', async () => {
+    const { inbound } = initTestSessionDb();
+    const addIn = inbound.prepare(
+      `INSERT INTO messages_in (id, seq, kind, timestamp, status, trigger, content) VALUES (?, ?, ?, ?, 'completed', 1, ?)`,
+    );
+    addIn.run('in-2', 2, 'chat', '2026-01-01 00:00:01', '{"text":"kept"}');
+    addIn.run('in-4', 4, 'chat', '2026-01-01 00:00:02', '{"text":"","deleted":"2026-01-01T00:01:00Z"}');
+
+    const mailbox = new SqliteAgentMailbox();
+    await mailbox.start({ agentGroupId: 'agent', sessionId: 'session', mailbox: null });
+    expect(mailbox.getChatSince({ inbound: 0, outbound: 0 }, 10).inbound.map((m) => m.id)).toEqual(['in-2']);
+  });
 });

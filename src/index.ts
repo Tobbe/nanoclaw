@@ -24,6 +24,7 @@ import { startGatewayApprovalCoordinator, stopGatewayApprovalCoordinator } from 
 import { startGatewayAvailabilityMonitor } from './gateway-availability.js';
 import { getGatewayProvider } from './gateway-providers/index.js';
 import { routeInbound } from './router.js';
+import { reviseInbound } from './inbound-revision.js';
 import { log } from './log.js';
 import { enforceUpgradeTripwire } from './upgrade-state.js';
 
@@ -127,6 +128,21 @@ async function main(): Promise<void> {
           )
           .catch((err) => {
             log.error('Failed to route inbound message', { channelType: adapter.channelType, err });
+          });
+      },
+      onInboundRevised(platformId, messageId, revision) {
+        inboundReady
+          .then(() =>
+            reviseInbound({
+              channelType: adapter.channelType,
+              instance: adapter.instance ?? adapter.channelType,
+              platformId,
+              messageId,
+              revision,
+            }),
+          )
+          .catch((err) => {
+            log.error('Failed to revise a stored message', { channelType: adapter.channelType, err });
           });
       },
       onInboundEvent(event) {

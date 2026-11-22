@@ -5,6 +5,8 @@
  * Two patterns: native adapters (implement directly) or Chat SDK bridge (wrap a Chat SDK adapter).
  */
 
+import type { InboundRevision } from '../mailbox/types.js';
+
 /** Passed to the adapter at setup time. */
 export interface ChannelSetup {
   /** Called when an inbound message arrives from the platform. */
@@ -17,6 +19,12 @@ export interface ChannelSetup {
    * adapter-channel-type injection so the caller can target any wired mg.
    */
   onInboundEvent(event: InboundEvent): void | Promise<void>;
+
+  /**
+   * Called when a stored message was edited or deleted on the platform.
+   * `messageId` is the id the message arrived with in `onInbound`.
+   */
+  onInboundRevised?(platformId: string, messageId: string, revision: InboundRevision): void | Promise<void>;
 
   /** Called when the adapter discovers metadata about a conversation. */
   onMetadata(platformId: string, name?: string, isGroup?: boolean): void;

@@ -198,6 +198,8 @@ export function sqliteGetChatSince(
         .prepare(
           `SELECT * FROM messages_in
             WHERE seq > ? AND kind IN ('chat', 'chat-sdk')
+              -- Deleted on the platform (host reviseMessage): gone for us too.
+              AND NOT (json_valid(content) AND json_extract(content, '$.deleted') IS NOT NULL)
             ORDER BY seq DESC LIMIT ?`,
         )
         .all(after.inbound, limit) as MessageInRow[],

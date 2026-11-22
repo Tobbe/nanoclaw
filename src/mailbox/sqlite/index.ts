@@ -53,6 +53,7 @@ import {
 import type {
   AgentMailbox,
   InboundMailbox,
+  InboundRevision,
   MailboxHistoryMessage,
   MailboxSession,
   MailboxSessionKey,
@@ -172,6 +173,34 @@ function getTaskStats(db: Database.Database, seriesId: string): TaskStats {
   };
 }
 
+/** SQL condition that leaves out messages marked deleted by `reviseMessage`. */
+const NOT_DELETED = "NOT (json_valid(content) AND json_extract(content, '$.deleted') IS NOT NULL)";
+
+/** The message content after an edit or deletion, or null when it isn't a chat message. */
+export function reviseContent(raw: string, revision: InboundRevision): string | null {
+  let content: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    content = parsed as Record<string, unknown>;
+  } catch (err) {
+    if (err instanceof SyntaxError) return null;
+    throw err;
+  }
+  if (revision.kind === 'edited') {
+    content.text = revision.text;
+    if (revision.formatted !== undefined) content.formatted = revision.formatted;
+    else delete content.formatted;
+    content.editedAt = revision.at;
+  } else {
+    // The author removed it: keep no trace of what it said or carried.
+    for (const key of ['text', 'formatted', 'attachments', 'replyTo', 'markdown', 'html']) delete content[key];
+    content.text = '';
+    content.deleted = revision.at;
+  }
+  return JSON.stringify(content);
+}
+
 export function wrapSqliteInbound(db: Database.Database, nextSequence = () => nextEvenAcross(db)): InboundMailbox {
   return {
     setRouting: (routing) => {
@@ -285,10 +314,32 @@ export function wrapSqliteInbound(db: Database.Database, nextSequence = () => ne
         .run(channelType, channelType, keep).changes;
       return expired + overflow;
     },
+    reviseMessage: (id, revision) => {
+      const rows = db
+        .prepare(
+          `SELECT id, status, content FROM messages_in
+            WHERE id = ? OR substr(id, 1, ?) = ?`,
+        )
+        .all(id, id.length + 6, `${id}:echo:`) as Array<{ id: string; status: string; content: string }>;
+      const update = db.prepare('UPDATE messages_in SET content = ?, status = ? WHERE id = ?');
+      let changed = 0;
+      for (const row of rows) {
+        const content = reviseContent(row.content, revision);
+        if (content === null) continue;
+        // A deleted message still waiting for the agent is never handed over.
+        const status = revision.kind === 'deleted' && row.status === 'pending' ? 'completed' : row.status;
+        changed += update.run(content, status, row.id).changes;
+      }
+      return changed;
+    },
     getInboundHistory: (limit) =>
       (
         db
-          .prepare('SELECT seq, timestamp, kind, content FROM messages_in ORDER BY seq DESC LIMIT ?')
+          .prepare(
+            `SELECT seq, timestamp, kind, content FROM messages_in
+              WHERE ${NOT_DELETED}
+              ORDER BY seq DESC LIMIT ?`,
+          )
           .all(limit) as MailboxHistoryMessage[]
       ).map((row) => ({ ...row, timestamp: sqliteTimestamp(row.timestamp) })),
     getConversationRoot: () => {

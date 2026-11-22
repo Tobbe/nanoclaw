@@ -120,6 +120,16 @@ The agent can also run:
   records (word-start matches, so it searches in both languages with synonyms);
 - `ncl sessions history <id>` to open a thread.
 
+Stored messages follow the platform. When someone edits a message on Slack
+(any Chat SDK channel), every stored copy takes the new text: the copy in its
+thread and the copies shared with other threads (`src/inbound-revision.ts`).
+When someone deletes one, its text and files are cleared and it is marked
+deleted, so history, search, "Since this record" lines and later record
+updates leave it out, and a deleted message still waiting for the agent is
+never handed over. A record that already folded it in keeps what it said, and
+an agent that already read it in a turn still remembers it. The bot's own messages are skipped, and a deleted thread parent
+that still has replies (Slack shows "This message was deleted") is not handled.
+
 Across conversations, an agent reads its own conversation plus the group's
 shared ones (channels, rooms), never another person's DM. This applies to
 `records --all`, recall, search, `ncl sessions history` and `ncl sessions file`
