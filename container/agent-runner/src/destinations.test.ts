@@ -127,6 +127,9 @@ describe('buildSystemPromptAddendum — reading messages', () => {
     expect(prompt).toContain('ncl sessions search --query');
     expect(prompt).toContain('ncl sessions recall --question');
     expect(prompt).toContain("Never say you can't see the other threads.");
+    expect(prompt).toContain('A named period also limits the answer');
+    expect(prompt).toContain('not by weekday names');
+    expect(prompt).toContain('no list of older extras unless asked');
     expect(prompt.indexOf('## Sending messages')).toBeLessThan(prompt.indexOf('## Reading messages'));
   });
 

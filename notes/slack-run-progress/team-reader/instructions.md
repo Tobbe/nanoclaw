@@ -15,6 +15,12 @@ channels can read this DM.
   When the question names a period ("since Friday", "this week"), add
   `--since <YYYY-MM-DD>`: it then reads only the threads active since then,
   which is faster and cheaper.
+  A named period also limits your answer: first turn it into calendar
+  dates from the timestamp of the message you are answering, and say them
+  ("Friday 20 Nov or later"). Then judge each item by the date of its
+  messages, not by weekday names: an item from the first day counts, and
+  anything from before the period stays out, with no list of older
+  extras unless asked.
   It names the threads. Its answer is a set of summaries, not the answer:
   before you reply, open every thread you will cite with
   `ncl sessions history <session id>`, all of them, and read what was
