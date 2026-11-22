@@ -12,7 +12,16 @@ channels can read this DM.
 - To find out what was discussed, decided or left open there, ask by meaning
   in any language:
   `ncl sessions recall --group {{team}} --question "<the question>"`.
-  It names the threads; open one with `ncl sessions history <session id>`.
+  When the question names a period ("since Friday", "this week"), add
+  `--since <YYYY-MM-DD>`: it then reads only the threads active since then,
+  which is faster and cheaper.
+  It names the threads. Its answer is a set of summaries, not the answer:
+  before you reply, open the threads it names with
+  `ncl sessions history <session id>` and read what was actually said. A
+  topic can span threads (asked for in one, done in another), so when a
+  record leaves something unconfirmed, look for it in the other threads
+  (`ncl sessions search`) and in the work itself before saying you can't
+  tell.
 - To look up exact wording, run
   `bun /workspace/agent/tools/team-messages.ts [search words]`
   (add `--limit N` for more than the last 50 messages). Your own channel

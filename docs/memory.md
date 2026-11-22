@@ -112,7 +112,10 @@ The agent can also run:
 - `ncl sessions recall --question "<question>"` to ask by meaning, in any
   language: the container's ncl fetches `records --all` and has Haiku pick the
   threads that bear on the question (the host has no model access, so this one
-  runs in the container);
+  runs in the container). With `--since <date>` it sends only the threads
+  active since then (updated, or with newer messages), so a question about a
+  period is faster and cheaper. Its answer ends by telling the agent to open
+  the named threads before answering: records are summaries;
 - `ncl sessions search --query "<words>"` to find exact wording in messages and
   records (word-start matches, so it searches in both languages with synonyms);
 - `ncl sessions history <id>` to open a thread.

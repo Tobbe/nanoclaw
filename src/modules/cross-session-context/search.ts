@@ -30,6 +30,7 @@ import {
   listThreadRecords,
   parseMessage,
   withNewerMessages,
+  type ShownThreadRecord,
 } from './thread-records.js';
 
 export const SEARCH_DEFAULT_LIMIT = 15;
@@ -209,6 +210,8 @@ export function formatSearchHits(hits: SearchHit[], timezone: string = TIMEZONE)
  * readableConversations), each headed with its conversation's name.
  */
 export async function sessionRecords(args: Record<string, unknown>, ctx: CallerContext): Promise<string> {
+  const since = parseSince(args.since);
+  const none = since ? `No thread records since ${String(args.since)}.` : 'No thread records yet.';
   if (args.all === true || args.all === 'true') {
     const agentGroupId = await groupOf(args, ctx);
     const readable = await readableConversations(agentGroupId, ctx);
@@ -217,10 +220,10 @@ export async function sessionRecords(args: Record<string, unknown>, ctx: CallerC
       (r) => r.session_id !== ownSession && readable.allows(r.messaging_group_id),
     );
     return (
-      formatThreadRecords(await withNewerMessages(rows), TIMEZONE, {
+      formatThreadRecords(activeSince(await withNewerMessages(rows), since), TIMEZONE, {
         maxChars: ALL_RECORDS_MAX_CHARS,
         conversationNames: readable.names,
-      }) || 'No thread records yet.'
+      }) || none
     );
   }
   if (ctx.caller !== 'agent') {
@@ -233,7 +236,26 @@ export async function sessionRecords(args: Record<string, unknown>, ctx: CallerC
   const rows = await listThreadRecords(agentGroupId, messagingGroupId, {
     excludeSessionId: ctx.caller === 'agent' ? ctx.sessionId : undefined,
   });
-  return formatThreadRecords(await withNewerMessages(rows)) || 'No thread records yet.';
+  return formatThreadRecords(activeSince(await withNewerMessages(rows), since)) || none;
+}
+
+/**
+ * `--since`: a date (YYYY-MM-DD) or ISO time, as an ISO cutoff. A bare date
+ * starts 12 hours early, so a day in any time zone is covered whole; a few
+ * extra threads are harmless, a missed one is not.
+ */
+export function parseSince(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = String(value).trim();
+  const ms = Date.parse(text);
+  if (!Number.isFinite(ms)) throw new Error(`--since: not a date: ${text}`);
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? ms - 12 * 3_600_000 : ms).toISOString();
+}
+
+/** Records of threads active since the cutoff: updated since, or with newer messages since. */
+export function activeSince(rows: ShownThreadRecord[], since: string | null): ShownThreadRecord[] {
+  if (!since) return rows;
+  return rows.filter((r) => r.updated_at >= since || (r.newer?.lastAt ?? '') >= since);
 }
 
 export interface BackfillCandidate {

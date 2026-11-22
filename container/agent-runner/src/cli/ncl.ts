@@ -69,7 +69,11 @@ async function writeRequest(mailbox: AgentMailbox, req: RequestFrame): Promise<v
 /**
  * Poll the mailbox for a cli_response matching our requestId.
  */
-async function pollResponse(mailbox: AgentMailbox, requestId: string, timeoutMs: number): Promise<ResponseFrame | null> {
+async function pollResponse(
+  mailbox: AgentMailbox,
+  requestId: string,
+  timeoutMs: number,
+): Promise<ResponseFrame | null> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -221,9 +225,7 @@ function formatHuman(resp: ResponseFrame): string {
   const header = keys.map((k, i) => k.padEnd(widths[i])).join('  ');
   const sep = widths.map((w) => '-'.repeat(w)).join('  ');
   const rows = data.map((r) =>
-    keys
-      .map((k, i) => String((r as Record<string, unknown>)[k] ?? '').padEnd(widths[i]))
-      .join('  '),
+    keys.map((k, i) => String((r as Record<string, unknown>)[k] ?? '').padEnd(widths[i])).join('  '),
   );
 
   return [header, sep, ...rows, ''].join('\n');
@@ -290,7 +292,8 @@ async function main(): Promise<void> {
     if (command === BACKFILL_COMMAND) {
       // Answered here, like recall: the host has the transcripts but no model access.
       const summary = await backfill({
-        candidates: async () => (await ask('sessions-backfill-candidates', { ...groupArg, ...overArg })).data as Candidate[],
+        candidates: async () =>
+          (await ask('sessions-backfill-candidates', { ...groupArg, ...overArg })).data as Candidate[],
         history: async (id) =>
           (await ask('sessions-history', { id, limit: BACKFILL_HISTORY_LIMIT })).data as TranscriptRow[],
         ask: askSmallModel,
@@ -321,7 +324,8 @@ async function main(): Promise<void> {
       // Answered here: the host has the records but no model access.
       const text = await recall(typeof requestArgs.question === 'string' ? requestArgs.question : '', {
         fetchRecords: async () => {
-          const resp = await ask('sessions-records', { all: true, ...groupArg });
+          const sinceArg = requestArgs.since !== undefined ? { since: String(requestArgs.since) } : {};
+          const resp = await ask('sessions-records', { all: true, ...groupArg, ...sinceArg });
           return resp.human ?? String(resp.data);
         },
         ask: askSmallModel,

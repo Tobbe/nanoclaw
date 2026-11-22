@@ -157,6 +157,12 @@ registerResource({
             'Agent group id: required on the host; with --all, a global-scope agent may name another group (its shared channels only).',
         },
         { name: 'conversation', type: 'string', description: 'Messaging group id (host only).' },
+        {
+          name: 'since',
+          type: 'string',
+          description:
+            'Only threads active since this date or time (YYYY-MM-DD or ISO 8601), e.g. the start of the period a question asks about.',
+        },
       ],
       handler: async (args, ctx) => await sessionRecords(args, ctx),
       formatHuman: (data) => String(data),
@@ -229,9 +235,18 @@ registerResource({
         'A small model reads the records of every thread you can read and answers by meaning, naming the threads, ' +
         'so the words need not match. Runs inside your container; open a named thread with `ncl sessions history <id>`, ' +
         'and use `ncl sessions search` for exact wording.',
-      examples: [`ncl sessions recall --question "hvad sagde vi om farverne på knapperne?"`],
+      examples: [
+        `ncl sessions recall --question "hvad sagde vi om farverne på knapperne?"`,
+        `# A question about a period: only the threads active in it, faster and cheaper:\nncl sessions recall --since 2026-11-20 --question "what is waiting on Lise?"`,
+      ],
       args: [
         { name: 'question', type: 'string', description: 'What you want to know.', required: true },
+        {
+          name: 'since',
+          type: 'string',
+          description:
+            'Only threads active since this date (YYYY-MM-DD or ISO 8601). Use it whenever the question names a period ("since Friday", "this week"): fewer records to read makes the answer faster and cheaper.',
+        },
         {
           name: 'group',
           type: 'string',

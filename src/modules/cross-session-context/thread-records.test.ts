@@ -268,6 +268,31 @@ describe('ncl sessions search', () => {
     expect(dmAll).toContain('Buttons');
   });
 
+  it('--since keeps the threads active since then: updated, or with newer messages', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = (id: string) => session(id) as any;
+    await records.saveThreadRecord(s('s-buttons'), BUTTONS, new Date('2026-11-21T09:00:00.000Z'));
+    await records.saveThreadRecord(s('s-legal'), 'Legal documents', new Date('2026-11-17T09:00:00.000Z'));
+    await records.saveThreadRecord(s('s-new'), 'Old case thread', new Date('2026-11-17T09:00:00.000Z'));
+    histories['s-new'] = { inbound: [chat('2026-11-20T15:00:00.000Z', 'Casen er lagt op')], outbound: [] };
+
+    const text = await search.sessionRecords({ all: true, since: '2026-11-20' }, { ...agent, sessionId: 's-other' });
+    expect(text).toContain('Buttons');
+    expect(text).toContain('Old case thread');
+    expect(text).toContain('Casen er lagt op');
+    expect(text).not.toContain('Legal documents');
+    expect(await search.sessionRecords({ all: true, since: '2026-11-22T00:00:00Z' }, agent)).toBe(
+      'No thread records since 2026-11-22T00:00:00Z.',
+    );
+    await expect(search.sessionRecords({ all: true, since: 'Friday' }, agent)).rejects.toThrow('not a date');
+  });
+
+  it('starts a bare --since date early enough for any time zone', () => {
+    expect(search.parseSince('2026-11-20')).toBe('2026-11-19T12:00:00.000Z');
+    expect(search.parseSince('2026-11-20T08:00:00Z')).toBe('2026-11-20T08:00:00.000Z');
+    expect(search.parseSince(undefined)).toBeNull();
+  });
+
   it('lists the records of the caller’s conversation without its own', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await records.saveThreadRecord(session('s-buttons') as any, BUTTONS);

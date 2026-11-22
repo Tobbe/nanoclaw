@@ -95,7 +95,8 @@ export interface CoveredCursor {
 
 /** A record with the thread's messages newer than it, as shown. */
 export interface ShownThreadRecord extends ThreadRecordRow {
-  newer?: { lines: string[]; more: number };
+  /** `lastAt`: the newest one's time (ISO). */
+  newer?: { lines: string[]; more: number; lastAt: string };
 }
 
 export function parseMessage(raw: string): { text: string; sender: string; ambient: boolean } {
@@ -322,7 +323,11 @@ export async function newerMessages(
   if (found.length === 0) return null;
   found.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
   const kept = found.slice(-NEWER_MESSAGES_MAX);
-  return { lines: kept.map((f) => f.line), more: found.length - kept.length };
+  return {
+    lines: kept.map((f) => f.line),
+    more: found.length - kept.length,
+    lastAt: found[found.length - 1].timestamp,
+  };
 }
 
 /** Records with their threads' newer messages. A thread that can't be read shows its record alone. */

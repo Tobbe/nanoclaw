@@ -17,15 +17,27 @@ export const RECALL_INSTRUCTIONS = [
   'Find the threads that answer or bear on the question, judging by meaning in any language',
   '(Danish, English, …), not by matching words.',
   '',
-  'Reply with up to 5 threads, most relevant first. For each: its header line exactly as given,',
-  'then the record lines that matter, copied as written. Nothing else.',
+  'A topic can span threads: one asks for something, another shows it was done or changed. Include',
+  'the threads that settle or update what the question is about, not only the one where it was raised.',
+  '',
+  'Reply with up to 8 threads, most relevant first. For each: its header line exactly as given,',
+  'then the record lines that matter and any "Since this record" lines that matter, copied as written.',
+  'Nothing else.',
   `If no thread bears on the question, reply exactly ${NO_MATCH}.`,
 ].join('\n');
 
 export function buildRecallPrompt(question: string, records: string): string {
-  return [RECALL_INSTRUCTIONS, '', '<question>', question.trim(), '</question>', '', '<records>', records, '</records>'].join(
-    '\n',
-  );
+  return [
+    RECALL_INSTRUCTIONS,
+    '',
+    '<question>',
+    question.trim(),
+    '</question>',
+    '',
+    '<records>',
+    records,
+    '</records>',
+  ].join('\n');
 }
 
 export interface RecallDeps {
@@ -34,13 +46,20 @@ export interface RecallDeps {
   ask: (prompt: string) => Promise<string>;
 }
 
-const FOOTER = 'Open a thread in full with `ncl sessions history <session id>`; find exact wording with `ncl sessions search`.';
+export const FOOTER = [
+  'These are summaries, not the answer. Before you answer, open the threads above with',
+  '`ncl sessions history <session id>` and read what was actually said, the newest messages too.',
+  'Where a record leaves something unconfirmed ("not confirmed here", "no answer yet"), look for it in',
+  'other threads (`ncl sessions search`, both languages) and in the work itself (repo, PRs, preview site)',
+  'before saying you can’t tell.',
+].join('\n');
 
 /** The text recall prints. Throws on a missing question or a failed fetch/model call. */
 export async function recall(question: string, deps: RecallDeps): Promise<string> {
   if (!question.trim()) throw new Error('--question is required');
   const records = (await deps.fetchRecords()).trim();
-  if (!records || records === 'No thread records yet.') return 'No thread records yet.';
+  // The host's "No thread records yet." / "No thread records since …".
+  if (!records || records.startsWith('No thread records')) return records || 'No thread records yet.';
   const reply = (await deps.ask(buildRecallPrompt(question, records))).trim();
   if (!reply || reply === NO_MATCH) {
     return `No thread record bears on that. Try \`ncl sessions search\` with words from the question, in both languages.`;
