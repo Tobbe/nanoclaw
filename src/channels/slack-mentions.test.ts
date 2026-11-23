@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveSlackMentions, slackMentionsUsers } from './slack-mentions.js';
+import { hasUnresolvedMention, resolveSlackMentions, slackMentionsUsers } from './slack-mentions.js';
 
 describe('slackMentionsUsers', () => {
   it('sees user mentions', () => {
@@ -47,5 +47,22 @@ describe('resolveSlackMentions', () => {
   it('leaves code, links, tokens and e-mail addresses alone', () => {
     const text = 'mail lise@effibo.dk, see `@Lise` and https://x.com/@Lise or <https://a.b|@Lise>';
     expect(resolveSlackMentions(text, people)).toBe(text);
+  });
+
+  it('tries the wider list only for a mention the thread cannot place', () => {
+    const thread = [people[0]];
+    const channel = [...people, { id: 'U0LISE0002', fullName: 'Lise Hansen' }];
+    // Tobbe hasn't posted in the thread; the channel knows him.
+    expect(resolveSlackMentions('<@U0LISE0001>, @Tobbe knows', thread, channel)).toBe(
+      '<@U0LISE0001>, <@U0TOBBE001> knows',
+    );
+    // Two Lises in the channel, but the thread's Lise wins.
+    expect(resolveSlackMentions('@Lise', thread, channel)).toBe('<@U0LISE0001>');
+    expect(resolveSlackMentions('@Mads', thread, channel)).toBe(plain('Mads'));
+  });
+
+  it('says when a mention was left as plain text', () => {
+    expect(hasUnresolvedMention(resolveSlackMentions('@Tobbe', [people[0]]))).toBe(true);
+    expect(hasUnresolvedMention(resolveSlackMentions('@Tobbe', people))).toBe(false);
   });
 });

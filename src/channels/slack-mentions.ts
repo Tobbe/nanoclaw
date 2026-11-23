@@ -22,28 +22,24 @@ const KEEP_PLAIN = '@⁠';
 
 const isWordChar = (c: string | undefined): boolean => c !== undefined && /[\p{L}\p{N}_]/u.test(c);
 
-/**
- * Turn the `@Name` mentions an agent writes into real `<@U…>` mentions.
- *
- * Slack's adapter only resolves `@word` by display name, one word, and posts
- * anything it can't resolve as a literal `<@word>` that notifies nobody. So
- * `@Lise Engelbrecht`, for someone with no display name, came out as
- * `<@Lise> Engelbrecht`. Here a mention matches someone's full or display
- * name (longest first, so the whole name is taken), else their first name
- * when only one person has it. One that still matches no one, or more than
- * one person, stays plain text. Code spans, `<…>` tokens, URLs and e-mail
- * addresses are left as they are.
- */
-export function resolveSlackMentions(text: string, people: MentionablePerson[]): string {
-  if (!text.includes('@')) return text;
-  const names: { name: string; ids: Set<string> }[] = [];
+/** True when resolving left some `@word` as plain text, so a wider list may help. */
+export function hasUnresolvedMention(text: string): boolean {
+  return text.includes(KEEP_PLAIN);
+}
+
+interface NameIndex {
+  names: { name: string; ids: Set<string> }[];
+  firstNames: Map<string, Set<string>>;
+}
+
+function indexPeople(people: MentionablePerson[]): NameIndex {
+  const full = new Map<string, Set<string>>();
   const firstNames = new Map<string, Set<string>>();
   const add = (map: Map<string, Set<string>>, key: string, id: string) => {
     const set = map.get(key) ?? new Set<string>();
     set.add(id);
     map.set(key, set);
   };
-  const full = new Map<string, Set<string>>();
   for (const p of people) {
     for (const n of [p.fullName, p.userName]) {
       const name = n?.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -52,8 +48,52 @@ export function resolveSlackMentions(text: string, people: MentionablePerson[]):
       add(firstNames, name.split(' ')[0], p.id);
     }
   }
-  for (const [name, ids] of full) names.push({ name, ids });
+  const names = [...full].map(([name, ids]) => ({ name, ids }));
   names.sort((a, b) => b.name.length - a.name.length);
+  return { names, firstNames };
+}
+
+/**
+ * Turn the `@Name` mentions an agent writes into real `<@U…>` mentions.
+ *
+ * Slack's adapter only resolves `@word` by display name, one word, and posts
+ * anything it can't resolve as a literal `<@word>` that notifies nobody. So
+ * `@Lise Engelbrecht`, for someone with no display name, came out as
+ * `<@Lise> Engelbrecht`. Here a mention matches someone's full or display
+ * name (longest first, so the whole name is taken), else their first name
+ * when only one person has it. `wider` is a second list (the channel's
+ * members) tried only for a mention the first list (the thread's people)
+ * can't place, so a thread participant wins a shared first name. One that
+ * still matches no one, or more than one person, stays plain text. Code
+ * spans, `<…>` tokens, URLs and e-mail addresses are left as they are.
+ */
+export function resolveSlackMentions(
+  text: string,
+  people: MentionablePerson[],
+  wider: MentionablePerson[] = [],
+): string {
+  if (!text.includes('@')) return text;
+  const tiers = [indexPeople(people), ...(wider.length ? [indexPeople(wider)] : [])];
+
+  // The id `@` + rest of the text at `at` resolves to, and how many characters it spans.
+  const place = (at: number): { id: string; length: number } | null => {
+    const rest = text.slice(at + 1).toLowerCase();
+    let end = at + 1;
+    while (isWordChar(text[end])) end += 1;
+    const word = text.slice(at + 1, end);
+    if (/^[UW][A-Z0-9]{6,}$/.test(word)) return { id: word, length: end - at };
+    for (const { names, firstNames } of tiers) {
+      const whole = names.find((n) => rest.startsWith(n.name) && !isWordChar(text[at + 1 + n.name.length]));
+      if (whole) {
+        if (whole.ids.size === 1) return { id: [...whole.ids][0], length: 1 + whole.name.length };
+        return null;
+      }
+      const ids = firstNames.get(word.toLowerCase());
+      if (ids?.size === 1) return { id: [...ids][0], length: end - at };
+      if (ids) return null;
+    }
+    return null;
+  };
 
   let out = '';
   let i = 0;
@@ -85,18 +125,15 @@ export function resolveSlackMentions(text: string, people: MentionablePerson[]):
       continue;
     }
     if (text[i] === '@' && !isWordChar(text[i - 1]) && isWordChar(text[i + 1])) {
-      const rest = text.slice(i + 1).toLowerCase();
-      const whole = names.find((n) => rest.startsWith(n.name) && !isWordChar(text[i + 1 + n.name.length]));
-      if (whole && whole.ids.size === 1) {
-        out += `<@${[...whole.ids][0]}>`;
-        i += 1 + whole.name.length;
+      const hit = place(i);
+      if (hit) {
+        out += `<@${hit.id}>`;
+        i += hit.length;
         continue;
       }
       let end = i + 1;
       while (isWordChar(text[end])) end += 1;
-      const word = text.slice(i + 1, end);
-      const ids = /^[UW][A-Z0-9]{6,}$/.test(word) ? new Set([word]) : firstNames.get(word.toLowerCase());
-      out += ids && ids.size === 1 && !whole ? `<@${[...ids][0]}>` : `${KEEP_PLAIN}${word}`;
+      out += `${KEEP_PLAIN}${text.slice(i + 1, end)}`;
       i = end;
       continue;
     }

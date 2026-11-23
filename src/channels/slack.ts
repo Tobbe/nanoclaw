@@ -19,7 +19,12 @@ import { createSlackAdapter, type SlackAdapter } from '@chat-adapter/slack';
 import { readEnvFile } from '../env.js';
 import type { ChannelAdapter, ChannelContextDefaults, ChannelDefaults } from './adapter.js';
 import { createChatSdkBridge } from './chat-sdk-bridge.js';
-import { resolveSlackMentions, slackMentionsUsers, type MentionablePerson } from './slack-mentions.js';
+import {
+  hasUnresolvedMention,
+  resolveSlackMentions,
+  slackMentionsUsers,
+  type MentionablePerson,
+} from './slack-mentions.js';
 import { registerChannelAdapter } from './channel-registry.js';
 import { setSlackAuthorIsBotResolver } from './slack-a2a-guard.js';
 import { slackRawTextExtractor } from './slack-raw-text.js';
@@ -155,6 +160,60 @@ export async function slackThreadPeople(slackAdapter: SlackAdapter, threadId: st
     .map((u) => ({ id: u.userId, userName: u.userName, fullName: u.fullName }));
 }
 
+const MEMBERS_TTL_MS = 10 * 60 * 1000;
+/** Channels larger than this aren't scanned: too many users.info calls for a name lookup. */
+const MAX_MEMBERS = 500;
+const channelMembersCache = new Map<string, { at: number; people: Promise<MentionablePerson[]> }>();
+
+/**
+ * The people in a Slack channel, for an `@Name` the thread's own people
+ * can't place: someone who hasn't posted in the thread yet. Read with
+ * conversations.members and cached for ten minutes per channel; names come
+ * from the adapter's cached users.info. Bots are left out. Returns [] when
+ * the channel is too large or Slack refuses (missing scope, network).
+ */
+export async function slackChannelPeople(slackAdapter: SlackAdapter, threadId: string): Promise<MentionablePerson[]> {
+  const { channel } = slackAdapter.decodeThreadId(threadId);
+  const cached = channelMembersCache.get(channel);
+  if (cached && Date.now() - cached.at < MEMBERS_TTL_MS) return cached.people;
+  const people = (async () => {
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await slackAdapter.webClient.conversations.members({ channel, limit: 200, cursor });
+      ids.push(...(page.members ?? []));
+      if (ids.length > MAX_MEMBERS) return [];
+      cursor = page.response_metadata?.next_cursor || undefined;
+    } while (cursor);
+    const users = await Promise.all(ids.map((id) => slackAdapter.getUser(id)));
+    return users
+      .filter((u): u is NonNullable<typeof u> => Boolean(u && !u.isBot))
+      .map((u) => ({ id: u.userId, userName: u.userName, fullName: u.fullName }));
+  })().catch(() => {
+    channelMembersCache.delete(channel);
+    return [] as MentionablePerson[];
+  });
+  channelMembersCache.set(channel, { at: Date.now(), people });
+  return people;
+}
+
+/**
+ * Resolve `@Name` mentions against the thread's people, then, for any left
+ * as plain text, against the whole channel.
+ */
+export async function resolveSlackThreadMentions(
+  slackAdapter: SlackAdapter,
+  text: string,
+  threadId: string,
+): Promise<string> {
+  if (!text.includes('@')) return text;
+  const thread = await slackThreadPeople(slackAdapter, threadId);
+  const first = resolveSlackMentions(text, thread);
+  if (!hasUnresolvedMention(first)) return first;
+  const channel = await slackChannelPeople(slackAdapter, threadId);
+  return channel.length ? resolveSlackMentions(text, thread, channel) : first;
+}
+
 /** Construction knobs for one Slack bot identity. */
 export interface SlackBridgeOptions {
   /**
@@ -207,8 +266,7 @@ export function createSlackBridge(options: SlackBridgeOptions = {}): ChannelAdap
     adapter: slackAdapter,
     extractRawText: slackRawTextExtractor(slackAdapter),
     mentionsUsers: slackMentionsUsers,
-    resolveMentions: async (text, threadId) =>
-      text.includes('@') ? resolveSlackMentions(text, await slackThreadPeople(slackAdapter, threadId)) : text,
+    resolveMentions: (text, threadId) => resolveSlackThreadMentions(slackAdapter, text, threadId),
     // "Typing…" is the assistant thread status; it stays until the bot posts
     // or the status is set to empty.
     clearTyping: async (threadId) => {
