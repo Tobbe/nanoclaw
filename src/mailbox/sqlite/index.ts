@@ -59,6 +59,7 @@ import type {
   MailboxSessionKey,
   MailboxTimelineMessage,
   OutboundMailbox,
+  StoredInboundMessage,
   ProcessingAck,
   TaskRecord,
   TaskStats,
@@ -331,7 +332,7 @@ export function wrapSqliteInbound(db: Database.Database, nextSequence = () => ne
           `SELECT id, status, timestamp, content FROM messages_in
             WHERE id = ? OR substr(id, 1, ?) = ?`,
         )
-        .all(id, id.length + 6, `${id}:echo:`) as Array<{
+        .all(id, id.length + 1, `${id}:`) as Array<{
         id: string;
         status: string;
         timestamp: string;
@@ -362,6 +363,16 @@ export function wrapSqliteInbound(db: Database.Database, nextSequence = () => ne
           )
           .all(limit) as MailboxHistoryMessage[]
       ).map((row) => ({ ...row, timestamp: sqliteTimestamp(row.timestamp) })),
+    getInboundMessage: (id) => {
+      const row = db
+        .prepare(
+          `SELECT id, kind, timestamp, status, platform_id AS platformId, channel_type AS channelType,
+                  thread_id AS threadId, content
+             FROM messages_in WHERE id = ?`,
+        )
+        .get(id) as StoredInboundMessage | undefined;
+      return row && { ...row, timestamp: sqliteTimestamp(row.timestamp) };
+    },
     getConversationRoot: () => {
       const row = db
         .prepare(

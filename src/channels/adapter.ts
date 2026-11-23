@@ -268,6 +268,8 @@ export interface ChannelAdapter {
    * without posting would otherwise leave "Typing…" showing.
    */
   clearTyping?(platformId: string, threadId: string | null): Promise<void>;
+  /** A link that opens this message on the platform, or null when there is none. */
+  messageLink?(platformId: string, messageId: string): Promise<string | null>;
   syncConversations?(): Promise<ConversationInfo[]>;
   /** Resolve conversation type and human-readable metadata for host UI. */
   resolveConversation?(platformId: string): Promise<ResolvedConversation | null>;

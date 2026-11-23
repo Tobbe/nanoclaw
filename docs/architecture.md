@@ -536,6 +536,8 @@ The host computes this — not the agent-runner. When the host detects a stale `
 
 **Output-sent protection**: If messages_out already has delivered rows for a batch, don't retry (prevents duplicate messages to user).
 
+**Failure notices**: when a run fails (for example the model API stays overloaded through the SDK's own retries), the runner writes a `failureNotice` row that replies to the message it was answering. The failure-alerts module (`src/modules/failure-alerts/`) takes it over in delivery: nothing is posted in the chat, and the owner gets a DM card instead. It names the sender and the chat, quotes the message, links to it when the channel can (`ChannelAdapter.messageLink`), and has **Retry** and **Dismiss** buttons. Failures in the same thread within ten minutes join the open card rather than sending another DM. Retry writes a system note and a copy of each message (`<row id>:retry:<n>`, the original content and timestamp) and wakes the session. Edits, deletions and reactions follow the copies to the same platform message. If no owner can be reached, the notice is posted in the chat as before.
+
 ### Host Polling
 
 Two tiers:

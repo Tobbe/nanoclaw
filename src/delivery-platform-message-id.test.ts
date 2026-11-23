@@ -21,6 +21,12 @@ describe('withPlatformMessageId', () => {
     });
   });
 
+  it('points a re-sent copy at the same platform message', () => {
+    expect(run({ operation: 'reaction', messageId: `1795.1:${ag}:retry:1700`, emoji: 'eyes' }).messageId).toBe(
+      '1795.1',
+    );
+  });
+
   it('leaves ids without the suffix alone', () => {
     const content = { operation: 'reaction', messageId: '-1001234567890:449', emoji: 'heart' };
     expect(run(content)).toEqual(content);

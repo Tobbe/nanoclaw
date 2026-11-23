@@ -35,16 +35,18 @@ describe('reviseMessage', () => {
     const { inbound, add, row } = mailbox();
     add('1.1:ag', { text: 'call list', sender: 'Lise', attachments: [{ name: 'a.csv' }] });
     add('1.1:ag:echo:sess-2', { text: 'call list', echo: { surface: 's' } });
+    add('1.1:ag:retry:5', { text: 'call list', sender: 'Lise' });
     add('1.10:ag', { text: 'a different message whose id shares the prefix' });
     add('2.2:ag', { text: 'kept' });
 
     expect(inbound.reviseMessage('1.1:ag', { kind: 'deleted', at: '2026-01-02T00:00:00.000Z' })).toEqual({
-      rows: 2,
+      rows: 3,
       original: { status: 'completed', timestamp: '2026-01-01T00:00:00.000Z', sender: 'Lise' },
     });
     const deleted = JSON.parse(row('1.1:ag').content);
     expect(deleted).toEqual({ sender: 'Lise', text: '', deleted: '2026-01-02T00:00:00.000Z' });
     expect(JSON.parse(row('1.1:ag:echo:sess-2').content).deleted).toBe('2026-01-02T00:00:00.000Z');
+    expect(JSON.parse(row('1.1:ag:retry:5').content).deleted).toBe('2026-01-02T00:00:00.000Z');
     expect(JSON.parse(row('1.10:ag').content).text).toBe('a different message whose id shares the prefix');
     expect(inbound.getInboundHistory(10).map((m) => JSON.parse(m.content).text)).toEqual([
       'kept',

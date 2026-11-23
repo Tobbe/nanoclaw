@@ -267,6 +267,11 @@ export function createSlackBridge(options: SlackBridgeOptions = {}): ChannelAdap
     extractRawText: slackRawTextExtractor(slackAdapter),
     mentionsUsers: slackMentionsUsers,
     resolveMentions: (text, threadId) => resolveSlackThreadMentions(slackAdapter, text, threadId),
+    messageLink: async (platformId, messageId) => {
+      const channel = platformId.replace(/^slack:/, '').split(':')[0];
+      const res = await slackAdapter.webClient.chat.getPermalink({ channel, message_ts: messageId });
+      return res.permalink ?? null;
+    },
     // "Typing…" is the assistant thread status; it stays until the bot posts
     // or the status is set to empty.
     clearTyping: async (threadId) => {

@@ -601,6 +601,21 @@ async function deliverMessage(
     return;
   }
 
+  // A failed run's notice: a registered handler may send it elsewhere (the
+  // failure-alerts module DMs the owner). If it can't, the notice falls
+  // through to the chat it was meant for, so a failure is never silent.
+  if (content?.failureNotice === true && failureNoticeHandler) {
+    try {
+      if (await failureNoticeHandler({ id: msg.id, inReplyTo: msg.inReplyTo, text: content.text }, session)) {
+        clearOutbox(session.agent_group_id, session.id, msg.id);
+        return;
+      }
+      // eslint-disable-next-line no-catch-all/no-catch-all -- the notice must still reach the chat
+    } catch (err) {
+      log.warn('Failure notice handler threw, posting the notice in the chat', { id: msg.id, err });
+    }
+  }
+
   // Permission check: the source agent must be allowed to deliver to this
   // channel destination. Two ways it passes:
   //
@@ -736,6 +751,23 @@ async function deliverMessage(
   clearOutbox(session.agent_group_id, session.id, msg.id);
 
   return platformMsgId;
+}
+
+/** A failed run's notice, as the container wrote it. */
+export interface FailureNotice {
+  id: string;
+  /** The inbound row the failed run was answering. */
+  inReplyTo: string | null;
+  text: unknown;
+}
+
+/** Returns true when it took care of the notice, false to post it in the chat as usual. */
+export type FailureNoticeHandler = (notice: FailureNotice, session: Session) => Promise<boolean>;
+
+let failureNoticeHandler: FailureNoticeHandler | null = null;
+
+export function registerFailureNoticeHandler(handler: FailureNoticeHandler | null): void {
+  failureNoticeHandler = handler;
 }
 
 /**
@@ -908,6 +940,9 @@ export function withPlatformMessageId(content: unknown, raw: string, agentGroupI
   if (!content || typeof content !== 'object') return raw;
   const { operation, messageId } = content as { operation?: unknown; messageId?: unknown };
   const suffix = `:${agentGroupId}`;
-  if (!operation || typeof messageId !== 'string' || !messageId.endsWith(suffix)) return raw;
-  return JSON.stringify({ ...content, messageId: messageId.slice(0, -suffix.length) });
+  if (!operation || typeof messageId !== 'string') return raw;
+  // A re-sent copy (`<row id>:retry:<n>`) points at the same platform message.
+  const rowId = messageId.replace(/:retry:\d+$/, '');
+  if (!rowId.endsWith(suffix)) return raw;
+  return JSON.stringify({ ...content, messageId: rowId.slice(0, -suffix.length) });
 }

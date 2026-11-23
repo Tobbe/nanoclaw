@@ -444,6 +444,8 @@ export interface ChatSdkBridgeConfig {
   mentionsUsers?: (raw: Record<string, unknown>) => boolean;
   /** Take the platform's typing indicator down (ChannelAdapter.clearTyping). */
   clearTyping?: (threadId: string) => Promise<void>;
+  /** A link that opens a message (ChannelAdapter.messageLink). */
+  messageLink?: (platformId: string, messageId: string) => Promise<string | null>;
   /**
    * Whether this platform uses threads as the primary conversation unit.
    * See `ChannelAdapter.supportsThreads`. Declared by the calling channel
@@ -1388,6 +1390,8 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       const tid = threadId ?? platformId;
       await adapter.startTyping(tid);
     },
+
+    ...(config.messageLink ? { messageLink: config.messageLink } : {}),
 
     ...(config.clearTyping
       ? {
