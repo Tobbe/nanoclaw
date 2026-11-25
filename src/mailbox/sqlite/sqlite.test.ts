@@ -165,6 +165,34 @@ describe('SQLite mailbox canonical serialization', () => {
     expect(wrapSqliteInbound(bare).wakeEvidence()).toBe('chatter');
   });
 
+  it('counts the people in a thread: not bots, echoes, other threads or agents', () => {
+    const inboundDb = new Database(':memory:');
+    databases.push(inboundDb);
+    inboundDb.exec(INBOUND_SCHEMA);
+    let seq = 0;
+    const insert = (id: string, channelType: string, threadId: string, content: object) =>
+      inboundDb
+        .prepare(
+          `INSERT INTO messages_in (id, seq, timestamp, kind, channel_type, thread_id, content, trigger)
+           VALUES (?, ?, '2026-01-01T00:00:00.000Z', 'chat-sdk', ?, ?, ?, 1)`,
+        )
+        .run(id, ++seq, channelType, threadId, JSON.stringify(content));
+    const inbound = wrapSqliteInbound(inboundDb);
+
+    insert('a', 'slack', 'T1', { senderId: 'U1' });
+    insert('b', 'slack', 'T1', { senderId: 'U1' });
+    expect(inbound.countThreadPeople('T1')).toBe(1);
+
+    insert('bot', 'slack', 'T1', { senderId: 'B1', author: { isBot: true } });
+    insert('x:echo:sess-2', 'session-echo', 'T1', { senderId: 'U3' });
+    insert('other', 'slack', 'T2', { senderId: 'U4' });
+    insert('peer', 'agent', 'T1', { senderId: 'U5' });
+    expect(inbound.countThreadPeople('T1')).toBe(1);
+
+    insert('c', 'slack', 'T1', { senderId: 'U2', author: { isBot: false } });
+    expect(inbound.countThreadPeople('T1')).toBe(2);
+  });
+
   it('answers the wake check and the conversation root from an index, also on inboxes made before it', () => {
     const legacy = new Database(':memory:');
     databases.push(legacy);

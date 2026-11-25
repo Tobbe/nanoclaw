@@ -70,6 +70,24 @@ let adapter: TypingAdapter | null = null;
 const typingRefreshers = new Map<string, TypingTarget>();
 
 /**
+ * How long a held indicator waits for the agent to start working. A run
+ * that decides to stay silent never releases it, so it lapses.
+ */
+const HOLD_MAX_MS = 10 * 60 * 1000;
+
+interface HeldTyping {
+  agentGroupId: string;
+  channelType: string;
+  platformId: string;
+  threadId: string | null;
+  instance?: string;
+  heldAt: number;
+}
+
+/** Indicators waiting for the agent to start working, by session. */
+const heldTyping = new Map<string, HeldTyping>();
+
+/**
  * Bind the typing module to the channel delivery adapter so it can
  * call `setTyping`. Called once by `src/delivery.ts` inside
  * `setDeliveryAdapter`. Passing a fresh adapter replaces the prior
@@ -136,6 +154,7 @@ export function startTypingRefresh(
   threadId: string | null,
   instance?: string,
 ): void {
+  heldTyping.delete(sessionId);
   const existing = typingRefreshers.get(sessionId);
   if (existing) {
     // Already refreshing. Fire an immediate tick for the new inbound
@@ -231,6 +250,7 @@ export function clearTypingNow(
   threadId: string | null,
   instance?: string,
 ): void {
+  heldTyping.delete(sessionId);
   const entry = typingRefreshers.get(sessionId);
   if (entry) {
     clearInterval(entry.interval);
@@ -239,7 +259,54 @@ export function clearTypingNow(
   clearTyping(sessionId, channelType, platformId, threadId, instance);
 }
 
+/**
+ * Hold the indicator instead of showing it: the message may not be for the
+ * agent (people in a thread talking to each other), and "Typing…" under it
+ * would claim it. releaseHeldTyping shows it once the agent starts working.
+ * A refresh that's already running is left alone.
+ */
+export function holdTypingRefresh(
+  sessionId: string,
+  agentGroupId: string,
+  channelType: string,
+  platformId: string,
+  threadId: string | null,
+  instance?: string,
+): void {
+  if (typingRefreshers.has(sessionId)) return;
+  heldTyping.set(sessionId, { agentGroupId, channelType, platformId, threadId, instance, heldAt: Date.now() });
+}
+
+/**
+ * The agent started working on a run that began at `runStartedAt` (epoch
+ * ms): show a held indicator. A run that started before the message was
+ * held is older work and doesn't count. Returns whether it was shown.
+ */
+export function releaseHeldTyping(sessionId: string, runStartedAt: number): boolean {
+  const held = heldTyping.get(sessionId);
+  if (!held) return false;
+  if (Date.now() - held.heldAt > HOLD_MAX_MS) {
+    heldTyping.delete(sessionId);
+    return false;
+  }
+  if (!(runStartedAt >= held.heldAt)) return false;
+  heldTyping.delete(sessionId);
+  startTypingRefresh(sessionId, held.agentGroupId, held.channelType, held.platformId, held.threadId, held.instance);
+  return true;
+}
+
+/** Drop a held indicator without showing it. */
+export function dropHeldTyping(sessionId: string): void {
+  heldTyping.delete(sessionId);
+}
+
+/** Test hook. */
+export function isTypingHeld(sessionId: string): boolean {
+  return heldTyping.has(sessionId);
+}
+
 export function stopTypingRefresh(sessionId: string): void {
+  heldTyping.delete(sessionId);
   const entry = typingRefreshers.get(sessionId);
   if (!entry) return;
   clearInterval(entry.interval);

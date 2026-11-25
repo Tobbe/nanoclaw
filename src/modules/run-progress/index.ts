@@ -20,7 +20,7 @@ import { onHostShutdown, onHostStart } from '../../host-lifecycle.js';
 import { log } from '../../log.js';
 import { registerMessageEngagedHook } from '../../router.js';
 import { writeSessionMessage } from '../../session-manager.js';
-import { clearTypingNow, stopTypingRefresh } from '../typing/index.js';
+import { clearTypingNow, releaseHeldTyping, stopTypingRefresh } from '../typing/index.js';
 import type { Session } from '../../types.js';
 import { RunCardManager, type CardIO, type CardTarget } from './manager.js';
 import { STOP_ACTION_ID } from './render.js';
@@ -181,6 +181,10 @@ export async function handleRunProgress(content: Record<string, unknown>, sessio
   }
   if (!recordRunProgress(session.id, snapshot)) return;
   receipts.runUpdate(session.id, snapshot.status);
+  // The agent started working on a held message: it's going to answer.
+  if (snapshot.status === 'running' || snapshot.status === 'waiting') {
+    releaseHeldTyping(session.id, Date.parse(snapshot.startedAt));
+  }
   const running = snapshot.steps.find((s) => s.state === 'running');
   log.debug('run_progress', {
     sessionId: session.id,

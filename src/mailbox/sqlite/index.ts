@@ -383,6 +383,18 @@ export function wrapSqliteInbound(db: Database.Database, nextSequence = () => ne
         .get() as MailboxTimelineMessage | undefined;
       return row && { ...row, timestamp: sqliteTimestamp(row.timestamp) };
     },
+    countThreadPeople: (threadId) =>
+      (
+        db
+          .prepare(
+            "SELECT COUNT(DISTINCT json_extract(content, '$.senderId')) AS n FROM messages_in " +
+              "WHERE kind IN ('chat','chat-sdk') AND thread_id = ? " +
+              "AND (channel_type IS NULL OR channel_type NOT IN ('session-echo', 'agent')) " +
+              "AND id NOT LIKE '%:echo:%' AND id NOT LIKE '%:backfill:%' " +
+              "AND json_valid(content) AND COALESCE(json_extract(content, '$.author.isBot'), 0) IN (0, 'false')",
+          )
+          .get(threadId) as { n: number }
+      ).n,
     findTaskBySeriesSlug: (slug) => {
       const pattern = `${slug}-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]`;
       const row = db

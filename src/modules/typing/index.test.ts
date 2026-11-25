@@ -14,7 +14,14 @@ vi.mock('../../config.js', async () => {
   return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-typing' };
 });
 
-import { setTypingAdapter, startTypingRefresh, stopTypingRefresh } from './index.js';
+import {
+  holdTypingRefresh,
+  isTypingHeld,
+  releaseHeldTyping,
+  setTypingAdapter,
+  startTypingRefresh,
+  stopTypingRefresh,
+} from './index.js';
 
 type Call = { channelType: string; platformId: string; threadId: string | null; instance?: string };
 
@@ -224,5 +231,51 @@ describe('clearing the indicator', () => {
     // The refresh is gone: no more typing ticks after Stop.
     await vi.advanceTimersByTimeAsync(20_000);
     expect(cleared).toHaveLength(2);
+  });
+});
+
+describe('held typing', () => {
+  it('shows nothing while held, and starts when a run begins after the hold', async () => {
+    const calls = captureAdapter();
+    holdTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1', 'slack');
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(calls).toHaveLength(0);
+
+    expect(releaseHeldTyping('sess-1', Date.now())).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toEqual([{ channelType: 'slack', platformId: 'slack:C1', threadId: 'T1', instance: 'slack' }]);
+    expect(isTypingHeld('sess-1')).toBe(false);
+  });
+
+  it('a run that started before the hold does not release it', async () => {
+    const calls = captureAdapter();
+    const runStarted = Date.now();
+    await vi.advanceTimersByTimeAsync(1000);
+    holdTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    expect(releaseHeldTyping('sess-1', runStarted)).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toHaveLength(0);
+    expect(isTypingHeld('sess-1')).toBe(true);
+  });
+
+  it('a hold lapses after ten minutes, and stopping drops it', async () => {
+    captureAdapter();
+    holdTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    expect(releaseHeldTyping('sess-1', Date.now())).toBe(false);
+    expect(isTypingHeld('sess-1')).toBe(false);
+
+    holdTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    stopTypingRefresh('sess-1');
+    expect(isTypingHeld('sess-1')).toBe(false);
+  });
+
+  it('does not hold while typing already shows', async () => {
+    const calls = captureAdapter();
+    startTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    holdTypingRefresh('sess-1', 'ag-1', 'slack', 'slack:C1', 'T1');
+    expect(isTypingHeld('sess-1')).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toHaveLength(1);
   });
 });

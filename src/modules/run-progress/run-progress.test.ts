@@ -157,3 +157,22 @@ describe('run_progress handler persistence', () => {
     }
   });
 });
+
+describe('held typing', () => {
+  it("a run's first progress shows typing held for its message; a finished run does not", async () => {
+    const { holdTypingRefresh, isTypingHeld, stopTypingRefresh } = await import('../typing/index.js');
+    const handler = getDeliveryAction('run_progress')!;
+    const session = { id: 'sess-h', messaging_group_id: null, thread_id: null } as never;
+    try {
+      holdTypingRefresh('sess-h', 'ag-1', 'slack', 'slack:C1', 'T1');
+      const later = new Date(Date.now() + 1000).toISOString();
+      await handler({ snapshot: snapshot({ runId: 'run-h1', startedAt: later, status: 'done' }) }, session);
+      expect(isTypingHeld('sess-h')).toBe(true);
+
+      await handler({ snapshot: snapshot({ runId: 'run-h2', startedAt: later }) }, session);
+      expect(isTypingHeld('sess-h')).toBe(false);
+    } finally {
+      stopTypingRefresh('sess-h');
+    }
+  });
+});

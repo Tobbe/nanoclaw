@@ -1,8 +1,9 @@
 /**
  * Router typing indicator on an always-on wiring (pattern "."): every message
- * wakes the agent, but "typing" shows only for messages meant for it — a
- * mention, or a follow-up in a thread it has already replied in. Other
- * wirings keep showing it for every engaged message.
+ * wakes the agent, but "typing" shows at once only for messages meant for it:
+ * a mention, or a follow-up in a thread it has already replied in where
+ * nobody else is talking. Everything else holds it until the agent starts
+ * working. Other wirings keep showing it for every engaged message.
  *
  * Exercised through the REAL routeInbound path (adapter registry + seeded
  * wiring).
@@ -37,6 +38,7 @@ vi.mock('./config.js', async () => {
 
 vi.mock('./modules/typing/index.js', () => ({
   startTypingRefresh: vi.fn(),
+  holdTypingRefresh: vi.fn(),
   stopTypingRefresh: vi.fn(),
   pauseTypingRefreshAfterDelivery: vi.fn(),
   setTypingAdapter: vi.fn(),
@@ -118,7 +120,7 @@ async function seedWiring(engageMode: MessagingGroupAgent['engage_mode'], engage
 async function inbound(
   id: string,
   threadId: string,
-  opts: { isMention?: boolean; addressedElsewhere?: boolean; text?: string } = {},
+  opts: { isMention?: boolean; addressedElsewhere?: boolean; text?: string; from?: [string, string] } = {},
 ): Promise<void> {
   await routeInbound({
     channelType: 'testchat',
@@ -127,7 +129,11 @@ async function inbound(
     message: {
       id,
       kind: 'chat-sdk',
-      content: JSON.stringify({ sender: 'Lise', senderId: 'U1', text: opts.text ?? 'hej' }),
+      content: JSON.stringify({
+        sender: (opts.from ?? ['Lise', 'U1'])[0],
+        senderId: (opts.from ?? ['Lise', 'U1'])[1],
+        text: opts.text ?? 'hej',
+      }),
       timestamp: now(),
       isMention: opts.isMention ?? false,
       addressedElsewhere: opts.addressedElsewhere,
@@ -139,6 +145,11 @@ async function inbound(
 async function typingCalls(): Promise<number> {
   const { startTypingRefresh } = await import('./modules/typing/index.js');
   return vi.mocked(startTypingRefresh).mock.calls.length;
+}
+
+async function heldCalls(): Promise<number> {
+  const { holdTypingRefresh } = await import('./modules/typing/index.js');
+  return vi.mocked(holdTypingRefresh).mock.calls.length;
 }
 
 beforeEach(async () => {
@@ -156,7 +167,7 @@ afterEach(async () => {
 });
 
 describe('typing on an always-on wiring', () => {
-  it('wakes on chatter without showing typing', async () => {
+  it('wakes on chatter and holds typing', async () => {
     await activate();
     await seedWiring('pattern', '.');
     const { wakeContainer } = await import('./container-runner.js');
@@ -164,6 +175,7 @@ describe('typing on an always-on wiring', () => {
     await inbound('m1', 'testchat:C1:100');
     expect(vi.mocked(wakeContainer)).toHaveBeenCalled();
     expect(await typingCalls()).toBe(0);
+    expect(await heldCalls()).toBe(1);
   });
 
   it('shows typing for a mention', async () => {
@@ -184,6 +196,32 @@ describe('typing on an always-on wiring', () => {
     expect(await typingCalls()).toBe(2);
 
     await inbound('m3', 'testchat:C1:100', { addressedElsewhere: true });
+    expect(await typingCalls()).toBe(2);
+    expect(await heldCalls()).toBe(1);
+  });
+
+  it('holds typing in a replied thread once two people are talking, unless mentioned', async () => {
+    await activate();
+    await seedWiring('pattern', '.');
+
+    await inbound('m1', 'testchat:C1:100', { isMention: true });
+    repliedInThread = true;
+    await inbound('m2', 'testchat:C1:100', { from: ['Tobbe', 'U2'] });
+    expect(await typingCalls()).toBe(1);
+    expect(await heldCalls()).toBe(1);
+
+    await inbound('m3', 'testchat:C1:100', { isMention: true, from: ['Tobbe', 'U2'] });
+    expect(await typingCalls()).toBe(2);
+  });
+
+  it('counts only people in this thread', async () => {
+    await activate();
+    await seedWiring('pattern', '.');
+
+    await inbound('m1', 'testchat:C1:200', { from: ['Tobbe', 'U2'] });
+    await inbound('m2', 'testchat:C1:100', { isMention: true });
+    repliedInThread = true;
+    await inbound('m3', 'testchat:C1:100');
     expect(await typingCalls()).toBe(2);
   });
 

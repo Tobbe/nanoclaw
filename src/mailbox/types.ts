@@ -173,6 +173,8 @@ export interface InboundMailbox {
   /** One stored inbound row by id, or undefined. */
   getInboundMessage(id: string): StoredInboundMessage | undefined;
   getConversationRoot(): MailboxTimelineMessage | undefined;
+  /** How many different people (not bots) have written in this platform thread, as stored here. */
+  countThreadPeople(threadId: string): number;
   findTaskBySeriesSlug(slug: string): TaskRecord | undefined;
 }
 

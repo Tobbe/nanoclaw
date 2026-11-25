@@ -492,7 +492,7 @@ If a turn ends with text that was not delivered, the agent-runner pushes a one-t
 
 Message editing is supported as an explicit operation (agent calls an `edit_message` tool), not as a streaming mechanism.
 
-Typing indicators: host sets typing when a container is active for a session, clears when the container exits or a response appears in messages_out.
+Typing indicators: host sets typing when a container is active for a session, clears when the container exits or a response appears in messages_out. On an always-on wiring (pattern "."), a message that doesn't mention the agent holds typing instead (always once two or more people have written in the thread): it shows only when the agent starts working, at the run's first progress update, so a message the agent decides to leave alone never shows "typing".
 
 ### Message Batching
 
