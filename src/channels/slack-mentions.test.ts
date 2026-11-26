@@ -17,6 +17,18 @@ describe('slackMentionsUsers', () => {
 });
 
 describe('resolveSlackMentions', () => {
+  it('turns channel-wide mentions into plain text', () => {
+    const people = [{ id: 'U0C0Y14JRC0', fullName: 'Lise Engelbrecht' }];
+    expect(resolveSlackMentions('<@U0C0Y14JRC0> <!channel> Tobbe, can you confirm?', people)).toBe(
+      '<@U0C0Y14JRC0> @\u2060channel Tobbe, can you confirm?',
+    );
+    expect(resolveSlackMentions('<!here> and <!everyone|everyone> and <!subteam^S1>', [])).toBe(
+      '@\u2060here and @\u2060everyone and <!subteam^S1>',
+    );
+    expect(resolveSlackMentions('@channel heads up', [])).toBe('@\u2060channel heads up');
+    expect(resolveSlackMentions('`<!channel>` is how Slack writes it', [])).toBe('`<!channel>` is how Slack writes it');
+  });
+
   const people = [
     { id: 'U0LISE0001', userName: 'Lise Engelbrecht', fullName: 'Lise Engelbrecht' },
     { id: 'U0TOBBE001', userName: 'Tobbe', fullName: 'Tobbe Lundberg' },

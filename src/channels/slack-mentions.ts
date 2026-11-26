@@ -65,14 +65,16 @@ function indexPeople(people: MentionablePerson[]): NameIndex {
  * members) tried only for a mention the first list (the thread's people)
  * can't place, so a thread participant wins a shared first name. One that
  * still matches no one, or more than one person, stays plain text. Code
- * spans, `<…>` tokens, URLs and e-mail addresses are left as they are.
+ * spans, `<…>` tokens, URLs and e-mail addresses are left as they are,
+ * except `<!channel>`, `<!here>` and `<!everyone>`: the agent must never
+ * notify a whole channel, so those become plain text.
  */
 export function resolveSlackMentions(
   text: string,
   people: MentionablePerson[],
   wider: MentionablePerson[] = [],
 ): string {
-  if (!text.includes('@')) return text;
+  if (!text.includes('@') && !text.includes('<!')) return text;
   const tiers = [indexPeople(people), ...(wider.length ? [indexPeople(wider)] : [])];
 
   // The id `@` + rest of the text at `at` resolves to, and how many characters it spans.
@@ -112,7 +114,8 @@ export function resolveSlackMentions(
     if (text[i] === '<') {
       const close = text.indexOf('>', i);
       if (close !== -1 && !text.slice(i, close).includes('\n')) {
-        out += text.slice(i, close + 1);
+        const broadcast = /^<!(channel|here|everyone)(\|[^>]*)?>$/.exec(text.slice(i, close + 1));
+        out += broadcast ? `${KEEP_PLAIN}${broadcast[1]}` : text.slice(i, close + 1);
         i = close + 1;
         continue;
       }
